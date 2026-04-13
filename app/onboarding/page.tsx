@@ -5,8 +5,8 @@ import { Logo } from '@/components/Logo'
 import { completeOnboarding } from '@/lib/actions'
 import { OnboardingPhotoGrid } from '@/components/OnboardingPhotoGrid'
 import type { OnboardingPhoto } from '@/components/OnboardingPhotoGrid'
-import { HERE_FOR_LABELS, PROMPTS } from '@/types'
-import type { HereFor } from '@/types'
+import { HERE_FOR_LABELS, PROMPTS, GENDER_LABELS, SHOW_ME_LABELS } from '@/types'
+import type { HereFor, Gender, ShowMe } from '@/types'
 import { ChevronRight, ChevronLeft, Check } from 'lucide-react'
 
 const HERE_FOR_OPTIONS: HereFor[] = [
@@ -16,7 +16,10 @@ const HERE_FOR_OPTIONS: HereFor[] = [
   'confidence-building',
 ]
 
-const TOTAL_STEPS = 5
+const GENDER_OPTIONS: Gender[] = ['man', 'woman', 'non-binary', 'prefer-not-to-say']
+const SHOW_ME_OPTIONS: ShowMe[] = ['men', 'women', 'everyone']
+
+const TOTAL_STEPS = 6
 
 export default function OnboardingPage() {
   const [step, setStep] = useState(1)
@@ -34,11 +37,15 @@ export default function OnboardingPage() {
   // Step 3
   const [hereFor, setHereFor] = useState<HereFor | ''>('')
 
-  // Step 4 — prompts
+  // Step 4
+  const [gender, setGender]   = useState<Gender | ''>('')
+  const [showMe, setShowMe]   = useState<ShowMe>('everyone')
+
+  // Step 5 — prompts
   const [pickedPrompts, setPickedPrompts] = useState<string[]>([])
   const [promptAnswers, setPromptAnswers] = useState<Record<string, string>>({})
 
-  // Step 5
+  // Step 6
   const [confidence, setConfidence] = useState(7)
 
   function togglePrompt(q: string) {
@@ -57,13 +64,13 @@ export default function OnboardingPage() {
     setError(null)
     setLoading(true)
 
-    // Photos are already uploaded to storage by OnboardingPhotoGrid —
-    // completeOnboarding writes them to user_photos atomically with the profile.
     const result = await completeOnboarding({
       name: name.trim(),
       age: parseInt(age),
       city: city.trim(),
       here_for: hereFor as HereFor,
+      gender: gender as Gender,
+      show_me: showMe,
       photos: onboardingPhotos,
       confidence_score: confidence,
       prompt_1_question: pickedPrompts[0] ?? null,
@@ -86,7 +93,11 @@ export default function OnboardingPage() {
       setError('Please select an option')
       return
     }
-    if (step === 4) {
+    if (step === 4 && !gender) {
+      setError('Please select your gender')
+      return
+    }
+    if (step === 5) {
       if (pickedPrompts.length < 2) {
         setError('Please pick 2 prompts')
         return
@@ -208,8 +219,57 @@ export default function OnboardingPage() {
             </div>
           )}
 
-          {/* ── Step 4: Prompts ───────────────────────── */}
+          {/* ── Step 4: Gender & preference ───────────── */}
           {step === 4 && (
+            <div className="space-y-6">
+              <div>
+                <h2 className="font-display font-bold text-2xl text-cream mb-1">About you</h2>
+                <p className="text-muted font-body text-sm">Used to personalise your discover feed.</p>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-xs text-muted font-body uppercase tracking-wide">I am a</p>
+                <div className="space-y-2">
+                  {GENDER_OPTIONS.map((g) => (
+                    <button
+                      key={g}
+                      onClick={() => setGender(g)}
+                      className={`w-full text-left px-4 py-3.5 rounded-xl border font-body text-sm transition-all flex items-center justify-between ${
+                        gender === g
+                          ? 'border-accent bg-accent/15 text-cream'
+                          : 'border-rim bg-surface text-muted hover:border-accent/40 hover:text-cream'
+                      }`}
+                    >
+                      <span>{GENDER_LABELS[g]}</span>
+                      {gender === g && <Check size={14} className="text-accent" />}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-xs text-muted font-body uppercase tracking-wide">Show me</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {SHOW_ME_OPTIONS.map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => setShowMe(s)}
+                      className={`py-3 rounded-xl border font-body text-sm transition-all ${
+                        showMe === s
+                          ? 'border-accent bg-accent/15 text-cream'
+                          : 'border-rim bg-surface text-muted hover:border-accent/40 hover:text-cream'
+                      }`}
+                    >
+                      {SHOW_ME_LABELS[s]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Step 5: Prompts ───────────────────────── */}
+          {step === 5 && (
             <div className="space-y-5">
               <div>
                 <h2 className="font-display font-bold text-2xl text-cream mb-1">Your prompts</h2>
@@ -264,8 +324,8 @@ export default function OnboardingPage() {
             </div>
           )}
 
-          {/* ── Step 5: Daily confidence ──────────────── */}
-          {step === 5 && (
+          {/* ── Step 6: Daily confidence ──────────────── */}
+          {step === 6 && (
             <div className="space-y-6">
               <div>
                 <h2 className="font-display font-bold text-2xl text-cream mb-1">
@@ -356,9 +416,9 @@ export default function OnboardingPage() {
           )}
 
           {/* Skip prompts step */}
-          {step === 4 && (
+          {step === 5 && (
             <button
-              onClick={() => { setPickedPrompts([]); setPromptAnswers({}); setStep(5) }}
+              onClick={() => { setPickedPrompts([]); setPromptAnswers({}); setStep(6) }}
               className="w-full mt-3 text-sm text-muted font-body hover:text-cream transition-colors py-2"
             >
               Skip for now

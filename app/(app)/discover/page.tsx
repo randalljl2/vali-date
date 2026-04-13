@@ -7,16 +7,18 @@ export default async function DiscoverPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null
 
-  // Fetch rated IDs, current user's age preferences, and subscription tier in parallel
+  // Fetch rated IDs, current user's preferences, and subscription tier in parallel
   const [{ data: ratedRows }, { data: currentUser }] = await Promise.all([
     supabase.from('ratings').select('rated_id').eq('rater_id', user.id),
-    supabase.from('users').select('preferred_age_min, preferred_age_max, subscription_tier').eq('id', user.id).single(),
+    supabase.from('users').select('preferred_age_min, preferred_age_max, subscription_tier, gender, show_me').eq('id', user.id).single(),
   ])
 
   const ratedIds = (ratedRows ?? []).map((r) => r.rated_id)
 
   const ageMin = currentUser?.preferred_age_min ?? 18
   const ageMax = currentUser?.preferred_age_max ?? 65
+  const myGender = currentUser?.gender ?? null
+  const myShowMe = currentUser?.show_me ?? 'everyone'
 
   // Profiles not yet rated by this user, excluding self, filtered by age preference
   let profilesQuery = supabase
@@ -30,6 +32,24 @@ export default async function DiscoverPage() {
   // Only apply upper bound if not at the max (65+ means no upper limit)
   if (ageMax < 65) {
     profilesQuery = profilesQuery.lte('age', ageMax)
+  }
+
+  // My show_me preference — filter by their gender
+  if (myShowMe === 'men') {
+    profilesQuery = profilesQuery.eq('gender', 'man')
+  } else if (myShowMe === 'women') {
+    profilesQuery = profilesQuery.eq('gender', 'woman')
+  }
+  // 'everyone' → no gender filter
+
+  // Their show_me preference — only show profiles that want to see my gender
+  if (myGender === 'man') {
+    profilesQuery = profilesQuery.or('show_me.eq.men,show_me.eq.everyone,show_me.is.null')
+  } else if (myGender === 'woman') {
+    profilesQuery = profilesQuery.or('show_me.eq.women,show_me.eq.everyone,show_me.is.null')
+  } else {
+    // non-binary, prefer-not-to-say, or not set — only show profiles open to everyone
+    profilesQuery = profilesQuery.or('show_me.eq.everyone,show_me.is.null')
   }
 
   if (ratedIds.length > 0) {

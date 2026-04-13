@@ -7,10 +7,10 @@ import { StreakBadge } from '@/components/StreakBadge'
 import { TierProgressBar } from '@/components/TierProgressBar'
 import { PhotoGrid } from '@/components/PhotoGrid'
 import { HotStreakBanner } from '@/components/HotStreakBanner'
-import { signOut, updateDailyConfidence, updateUserPrompts, updateAgePreference, updateScoreSnapshot } from '@/lib/actions'
+import { signOut, updateDailyConfidence, updateUserPrompts, updateAgePreference, updateGenderPreference, updateScoreSnapshot } from '@/lib/actions'
 import { getTier, TIER_COLORS, getStreakPerk, getNextStreakPerk, displayScore } from '@/lib/utils'
-import { HERE_FOR_LABELS, PROMPTS } from '@/types'
-import type { UserProfile, UserPhoto, Streak, DailyConfidence, Tier } from '@/types'
+import { HERE_FOR_LABELS, PROMPTS, GENDER_LABELS, SHOW_ME_LABELS } from '@/types'
+import type { UserProfile, UserPhoto, Streak, DailyConfidence, Tier, Gender, ShowMe } from '@/types'
 import { AgeRangeSlider } from '@/components/AgeRangeSlider'
 import { MapPin, LogOut, Pencil, X, Check, Crown, Zap, TrendingUp, Sparkles } from 'lucide-react'
 import { Logo } from '@/components/Logo'
@@ -98,6 +98,24 @@ export function ProfileClient({
   const [savingAge, setSavingAge] = useState(false)
   const [ageSaved, setAgeSaved] = useState(false)
   const [ageError, setAgeError] = useState<string | null>(null)
+
+  // Gender & show_me state
+  const [editGender, setEditGender] = useState<Gender | ''>(profile.gender ?? '')
+  const [editShowMe, setEditShowMe] = useState<ShowMe>(profile.show_me ?? 'everyone')
+  const [savingGender, setSavingGender] = useState(false)
+  const [genderSaved, setGenderSaved] = useState(false)
+  const [genderError, setGenderError] = useState<string | null>(null)
+
+  async function handleGenderSave() {
+    if (!editGender) { setGenderError('Please select your gender'); return }
+    setSavingGender(true)
+    setGenderError(null)
+    const result = await updateGenderPreference(editGender as Gender, editShowMe)
+    setSavingGender(false)
+    if ('error' in result) { setGenderError(result.error); return }
+    setGenderSaved(true)
+    setTimeout(() => setGenderSaved(false), 2500)
+  }
 
   async function handleAgeSave() {
     setSavingAge(true)
@@ -513,6 +531,67 @@ export function ProfileClient({
             </button>
           </div>
         )}
+      </div>
+
+      {/* Gender & preference */}
+      <div className="mx-4 mt-5 bg-surface border border-rim rounded-2xl p-4">
+        <h3 className="font-body font-semibold text-cream text-sm mb-4">Gender &amp; preference</h3>
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <p className="text-xs text-muted font-body">I am a</p>
+            <div className="grid grid-cols-2 gap-2">
+              {(['man', 'woman', 'non-binary', 'prefer-not-to-say'] as Gender[]).map((g) => (
+                <button
+                  key={g}
+                  onClick={() => { setEditGender(g); setGenderSaved(false) }}
+                  className={`py-2.5 px-3 rounded-xl border font-body text-xs transition-all text-left flex items-center justify-between ${
+                    editGender === g
+                      ? 'border-accent bg-accent/15 text-cream'
+                      : 'border-rim bg-bg text-muted hover:border-accent/40 hover:text-cream'
+                  }`}
+                >
+                  <span>{GENDER_LABELS[g]}</span>
+                  {editGender === g && <Check size={12} className="text-accent flex-shrink-0" />}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-xs text-muted font-body">Show me</p>
+            <div className="grid grid-cols-3 gap-2">
+              {(['men', 'women', 'everyone'] as ShowMe[]).map((s) => (
+                <button
+                  key={s}
+                  onClick={() => { setEditShowMe(s); setGenderSaved(false) }}
+                  className={`py-2.5 rounded-xl border font-body text-xs transition-all ${
+                    editShowMe === s
+                      ? 'border-accent bg-accent/15 text-cream'
+                      : 'border-rim bg-bg text-muted hover:border-accent/40 hover:text-cream'
+                  }`}
+                >
+                  {SHOW_ME_LABELS[s]}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {genderError && (
+            <p className="text-xs text-accent font-body">{genderError}</p>
+          )}
+
+          <button
+            onClick={handleGenderSave}
+            disabled={savingGender || genderSaved}
+            className={`w-full py-2.5 rounded-xl text-sm font-body font-medium transition-colors ${
+              genderSaved
+                ? 'bg-[#2db896]/20 border border-[#2db896]/40 text-[#2db896]'
+                : 'bg-accent text-cream hover:bg-accent/90 disabled:opacity-60'
+            }`}
+          >
+            {savingGender ? 'Saving…' : genderSaved ? '✓ Saved' : 'Save'}
+          </button>
+        </div>
       </div>
 
       {/* Discover preferences */}

@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { uploadFile, deleteFile } from '@/lib/supabase/admin'
-import type { HereFor, UserPhoto, SubscriptionTier } from '@/types'
+import type { HereFor, UserPhoto, SubscriptionTier, Gender, ShowMe } from '@/types'
 
 // ── Auth ─────────────────────────────────────────────────────
 
@@ -242,6 +242,8 @@ export async function completeOnboarding(data: {
   age: number
   city: string
   here_for: HereFor
+  gender: Gender
+  show_me: ShowMe
   /** Ordered list of pre-uploaded photos (storage-only, no DB yet). */
   photos: Array<{ url: string }>
   confidence_score: number
@@ -261,6 +263,8 @@ export async function completeOnboarding(data: {
     age: data.age,
     city: data.city,
     here_for: data.here_for,
+    gender: data.gender,
+    show_me: data.show_me,
     photo_url: data.photos[0]?.url ?? null,
     prompt_1_question: data.prompt_1_question,
     prompt_1_answer: data.prompt_1_answer,
@@ -335,6 +339,30 @@ export async function updateAgePreference(
     .update({
       preferred_age_min: min,
       preferred_age_max: max,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', user.id)
+
+  if (error) return { error: error.message }
+  revalidatePath('/profile')
+  return { success: true }
+}
+
+// ── Gender & preference ───────────────────────────────────────
+
+export async function updateGenderPreference(
+  gender: Gender,
+  showMe: ShowMe
+): Promise<{ success: boolean } | { error: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const { error } = await supabase
+    .from('users')
+    .update({
+      gender,
+      show_me: showMe,
       updated_at: new Date().toISOString(),
     })
     .eq('id', user.id)

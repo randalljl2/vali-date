@@ -124,7 +124,7 @@ export default async function LandingPage() {
               { step: '04', title: 'Connect',   desc: 'Chat, plan dates, and meet people who are genuinely into you.' },
             ].map(({ step, title, desc }) => (
               <div key={step} className="relative bg-surface border border-rim rounded-2xl p-6 space-y-3">
-                <span className="font-display font-black text-4xl text-accent/20 leading-none">{step}</span>
+                <span className="font-display font-black text-4xl leading-none text-accent">{step}</span>
                 <h3 className="font-display font-bold text-cream text-lg">{title}</h3>
                 <p className="text-muted text-sm leading-relaxed">{desc}</p>
               </div>
@@ -215,8 +215,8 @@ export default async function LandingPage() {
         {/* ── 6. Final CTA ──────────────────────────────────── */}
         <section className="px-6 py-24 max-w-xl mx-auto text-center space-y-8">
           <h2 className="font-display font-black text-cream" style={{ fontSize: 'clamp(2.2rem, 8vw, 4rem)', lineHeight: 1.1 }}>
-            Know your number.<br />
-            <span className="text-accent italic">Own it.</span>
+            Love or validation?<br />
+            <span className="text-accent italic">Why not both.</span>
           </h2>
           <p className="text-muted leading-relaxed">
             No fake swipes. No hidden algorithms. No manufactured matches.

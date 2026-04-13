@@ -1,5 +1,21 @@
 export type SubscriptionTier = 'free' | 'plus' | 'premium'
 
+export type Gender = 'man' | 'woman' | 'non-binary' | 'prefer-not-to-say'
+export type ShowMe = 'men' | 'women' | 'everyone'
+
+export const GENDER_LABELS: Record<Gender, string> = {
+  'man': 'Man',
+  'woman': 'Woman',
+  'non-binary': 'Non-binary',
+  'prefer-not-to-say': 'Prefer not to say',
+}
+
+export const SHOW_ME_LABELS: Record<ShowMe, string> = {
+  'men': 'Men',
+  'women': 'Women',
+  'everyone': 'Everyone',
+}
+
 export type HereFor =
   | 'post-breakup-reset'
   | 'boredom-curiosity'
@@ -39,6 +55,8 @@ export interface UserProfile {
   prompt_1_answer: string | null
   prompt_2_question: string | null
   prompt_2_answer: string | null
+  gender: Gender | null
+  show_me: ShowMe | null
   preferred_age_min: number | null
   preferred_age_max: number | null
   subscription_tier: SubscriptionTier
