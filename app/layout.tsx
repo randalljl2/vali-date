@@ -1,38 +1,44 @@
 import type { Metadata } from 'next'
-import { Playfair_Display, DM_Sans } from 'next/font/google'
+import { Fraunces, Lora, DM_Sans } from 'next/font/google'
 import './globals.css'
 
-const playfair = Playfair_Display({
+const fraunces = Fraunces({
   subsets: ['latin'],
-  variable: '--font-playfair',
+  variable: '--font-fraunces',
+  weight: ['700', '800', '900'],
+  style: ['normal', 'italic'],
+  display: 'swap',
+})
+
+const lora = Lora({
+  subsets: ['latin'],
+  variable: '--font-lora',
+  style: ['normal', 'italic'],
   display: 'swap',
 })
 
 const dmSans = DM_Sans({
   subsets: ['latin'],
   variable: '--font-dm-sans',
+  weight: ['300', '400', '500'],
   display: 'swap',
 })
 
 export const metadata: Metadata = {
-  title: 'Vali Date — Be Rated. Be Real. Be Ready.',
+  title: 'ValiDate — A return to honest dating.',
   description:
-    'Rate and be rated. Mutual 5+ unlocks a match. Your score is always honest.',
+    'The dating app built around compatibility, not algorithms. Answer honestly. Get matched. Connect.',
   openGraph: {
-    title: 'Vali Date',
-    description: 'Be Rated. Be Real. Be Ready.',
+    title: 'ValiDate',
+    description: 'A return to honest dating.',
     type: 'website',
   },
 }
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${playfair.variable} ${dmSans.variable}`}>
-      <body className="min-h-screen bg-bg text-cream font-body antialiased">
+    <html lang="en" className={`${fraunces.variable} ${lora.variable} ${dmSans.variable}`}>
+      <body className="min-h-screen bg-bg text-ink font-body antialiased">
         {children}
       </body>
     </html>

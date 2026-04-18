@@ -1,90 +1,52 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
-import { TierBadge } from '@/components/TierBadge'
-import { StreakBadge } from '@/components/StreakBadge'
-import { TierProgressBar } from '@/components/TierProgressBar'
 import { PhotoGrid } from '@/components/PhotoGrid'
-import { HotStreakBanner } from '@/components/HotStreakBanner'
-import { signOut, updateDailyConfidence, updateUserPrompts, updateAgePreference, updateGenderPreference, updateScoreSnapshot } from '@/lib/actions'
-import { getTier, TIER_COLORS, getStreakPerk, getNextStreakPerk, displayScore } from '@/lib/utils'
-import { HERE_FOR_LABELS, PROMPTS, GENDER_LABELS, SHOW_ME_LABELS } from '@/types'
-import type { UserProfile, UserPhoto, Streak, DailyConfidence, Tier, Gender, ShowMe } from '@/types'
 import { AgeRangeSlider } from '@/components/AgeRangeSlider'
-import { MapPin, LogOut, Pencil, X, Check, Crown, Zap, TrendingUp, Sparkles } from 'lucide-react'
+import { HeightPicker } from '@/components/HeightPicker'
+import {
+  signOut, updateDailyConfidence, updateUserPrompts,
+  updateAgePreference, updateGenderPreference, updateHeight,
+} from '@/lib/actions'
+import { formatHeight } from '@/lib/utils'
+import { HERE_FOR_LABELS, PROMPTS, GENDER_LABELS, SHOW_ME_LABELS } from '@/types'
+import type { UserProfile, UserPhoto, DailyConfidence, Gender, ShowMe } from '@/types'
+import { LogOut, Pencil, X, Check, BookOpen, Zap } from 'lucide-react'
 import { Logo } from '@/components/Logo'
 
 interface Props {
   profile: UserProfile
   photos: UserPhoto[]
-  streak: Streak | null
   todayConfidence: DailyConfidence | null
   matchCount: number
-  ratingsGiven: number
+  answersCount: number
   email: string
-  tierMovedUp: boolean
-  currentTier: Tier
-  boostActivatedAt: string | null
-  boostActive: boolean
-  boostUsedThisWeek: boolean
-}
-
-const STREAK_PERKS = [
-  { days: 3,  label: 'Shown to 10% more people', icon: '📢' },
-  { days: 7,  label: 'Boosted badge',             icon: '⚡' },
-  { days: 14, label: 'Priority in discover feed', icon: '🚀' },
-  { days: 30, label: 'Iconic border effect',      icon: '✦' },
-]
-
-const TIER_SUBSCRIPTION_ICONS = {
-  free: null,
-  plus: Zap,
-  premium: Crown,
-}
-const TIER_SUBSCRIPTION_COLORS = {
-  free: '#8a7878',
-  plus: '#e8c46a',
-  premium: '#9b6dff',
-}
-const TIER_SUBSCRIPTION_LABELS = {
-  free: 'Free',
-  plus: 'Vali Date Plus',
-  premium: 'Vali Date Premium',
 }
 
 export function ProfileClient({
   profile,
   photos,
-  streak,
   todayConfidence,
   matchCount,
-  ratingsGiven,
+  answersCount,
   email,
-  tierMovedUp,
-  currentTier,
-  boostActivatedAt,
-  boostActive: initialBoostActive,
-  boostUsedThisWeek,
 }: Props) {
   const [confidence, setConfidence] = useState(todayConfidence?.score ?? 7)
   const [savingConf, setSavingConf] = useState(false)
   const [confSaved, setConfSaved] = useState(!!todayConfidence)
 
-  // Prompts edit state
+  // Prompts state
   const [editingPrompts, setEditingPrompts] = useState(false)
-  const [editPicked, setEditPicked] = useState<string[]>([
-    profile.prompt_1_question,
-    profile.prompt_2_question,
-  ].filter(Boolean) as string[])
+  const [editPicked, setEditPicked] = useState<string[]>(
+    [profile.prompt_1_question, profile.prompt_2_question].filter(Boolean) as string[]
+  )
   const [editAnswers, setEditAnswers] = useState<Record<string, string>>({
     ...(profile.prompt_1_question ? { [profile.prompt_1_question]: profile.prompt_1_answer ?? '' } : {}),
     ...(profile.prompt_2_question ? { [profile.prompt_2_question]: profile.prompt_2_answer ?? '' } : {}),
   })
   const [savingPrompts, setSavingPrompts] = useState(false)
   const [promptError, setPromptError] = useState<string | null>(null)
-
-  // Live-updated prompt display (updated after save)
   const [savedPrompts, setSavedPrompts] = useState({
     p1q: profile.prompt_1_question,
     p1a: profile.prompt_1_answer,
@@ -92,19 +54,37 @@ export function ProfileClient({
     p2a: profile.prompt_2_answer,
   })
 
-  // Age preference state
+  // Age preference
   const [ageMin, setAgeMin] = useState(profile.preferred_age_min ?? 18)
   const [ageMax, setAgeMax] = useState(profile.preferred_age_max ?? 65)
   const [savingAge, setSavingAge] = useState(false)
   const [ageSaved, setAgeSaved] = useState(false)
   const [ageError, setAgeError] = useState<string | null>(null)
 
-  // Gender & show_me state
+  // Height
+  const [editHeight, setEditHeight] = useState<number | null>(profile.height_cm ?? null)
+  const [savingHeight, setSavingHeight] = useState(false)
+  const [heightSaved, setHeightSaved] = useState(false)
+  const [heightError, setHeightError] = useState<string | null>(null)
+
+  // Gender & showMe
   const [editGender, setEditGender] = useState<Gender | ''>(profile.gender ?? '')
   const [editShowMe, setEditShowMe] = useState<ShowMe>(profile.show_me ?? 'everyone')
   const [savingGender, setSavingGender] = useState(false)
   const [genderSaved, setGenderSaved] = useState(false)
   const [genderError, setGenderError] = useState<string | null>(null)
+
+  const isPaid = profile.subscription_tier !== 'free'
+
+  async function handleHeightSave() {
+    setSavingHeight(true)
+    setHeightError(null)
+    const result = await updateHeight(editHeight)
+    setSavingHeight(false)
+    if ('error' in result) { setHeightError(result.error); return }
+    setHeightSaved(true)
+    setTimeout(() => setHeightSaved(false), 2500)
+  }
 
   async function handleGenderSave() {
     if (!editGender) { setGenderError('Please select your gender'); return }
@@ -126,36 +106,6 @@ export function ProfileClient({
     setAgeSaved(true)
     setTimeout(() => setAgeSaved(false), 2500)
   }
-
-  const tier = getTier(profile.average_score)
-  const isIconic = tier === 'Iconic'
-  const currentStreak = streak?.current_streak ?? 0
-  const perk = getStreakPerk(currentStreak)
-  const nextPerk = getNextStreakPerk(currentStreak)
-
-  // Tier movement celebration — show once, then update snapshot
-  const [showTierCelebration, setShowTierCelebration] = useState(tierMovedUp)
-  useEffect(() => {
-    if (!tierMovedUp) return
-    // After 5s, hide celebration and update snapshot
-    const t = setTimeout(() => {
-      setShowTierCelebration(false)
-      updateScoreSnapshot()
-    }, 5000)
-    return () => clearTimeout(t)
-  }, [tierMovedUp])
-
-  const subscriptionTier = profile.subscription_tier
-  const SubscriptionIcon = TIER_SUBSCRIPTION_ICONS[subscriptionTier]
-  const subscriptionColor = TIER_SUBSCRIPTION_COLORS[subscriptionTier]
-  const subscriptionLabel = TIER_SUBSCRIPTION_LABELS[subscriptionTier]
-
-  // Profile completion quests
-  const questPhotos = photos.length >= 3
-  const questPrompts = !!(profile.prompt_1_answer && profile.prompt_2_answer)
-  const questAge = profile.preferred_age_min !== null
-  const questsDone = [questPhotos, questPrompts, questAge].filter(Boolean).length
-  const allQuestsDone = questsDone === 3
 
   function toggleEditPrompt(q: string) {
     if (editPicked.includes(q)) {
@@ -207,241 +157,131 @@ export function ProfileClient({
   }
 
   return (
-    <div className="flex flex-col min-h-screen pb-6">
-      {/* Tier movement celebration overlay */}
-      {showTierCelebration && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none px-6">
-          <div className="bg-surface border border-[#e8c46a]/50 rounded-3xl px-8 py-7 text-center shadow-2xl animate-fade-in-up w-full max-w-xs pointer-events-auto">
-            <div className="text-4xl mb-3">✦</div>
-            <div className="font-display font-bold text-2xl text-cream mb-1">Tier Up!</div>
-            <div className="text-muted text-sm font-body mb-2">
-              You moved up to
-            </div>
-            <div
-              className="font-display font-bold text-xl mb-4"
-              style={{ color: TIER_COLORS[currentTier] }}
-            >
-              {currentTier}
-            </div>
-            <p className="text-xs text-muted font-body">Keep rating and getting rated to climb higher.</p>
-            <button
-              onClick={() => { setShowTierCelebration(false); updateScoreSnapshot() }}
-              className="mt-4 text-xs text-muted font-body hover:text-cream transition-colors"
-            >
-              Dismiss
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Hero image / banner */}
-      <div className="relative w-full h-72 flex-shrink-0 overflow-hidden">
-        {photos.length > 0 ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={photos[0].url}
-            alt={profile.name}
-            className="absolute inset-0 w-full h-full object-cover"
-          />
-        ) : (
-          /* Placeholder — no photos yet */
-          <div
-            className="absolute inset-0 flex items-center justify-center"
-            style={{ background: 'linear-gradient(135deg, #3a0d12 0%, #1a0508 60%, #0c0a0b 100%)' }}
-          >
-            <Logo size="xl" className="opacity-30" />
-          </div>
-        )}
-
-        {/* Bottom dark fade */}
-        <div
-          className="absolute inset-x-0 bottom-0 h-36 pointer-events-none"
-          style={{ background: 'linear-gradient(to top, #0c0a0b 0%, transparent 100%)' }}
-        />
-
-        {/* Sign out — top right */}
+    <div className="flex flex-col min-h-screen pb-6 bg-bg">
+      {/* Header */}
+      <div className="px-4 pt-6 pb-4 flex items-center justify-between">
+        <Logo size="md" />
         <button
           onClick={() => signOut()}
-          className="absolute top-4 right-4 flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-white/20 bg-black/40 backdrop-blur-sm text-white/70 hover:text-white text-xs font-body transition-colors"
+          className="flex items-center gap-1.5 text-xs text-muted font-body hover:text-ink-2 transition-colors"
         >
-          <LogOut size={12} />
+          <LogOut size={13} />
           Sign out
         </button>
+      </div>
 
-        {/* Name + location — bottom left */}
-        <div className="absolute bottom-4 left-4 right-4 flex items-end justify-between">
-          <div>
-            <h1 className="font-display font-bold text-2xl text-cream leading-tight drop-shadow-lg">
-              {profile.name}, {profile.age}
-            </h1>
-            <div className="flex items-center gap-1 text-cream/60 text-sm mt-0.5">
-              <MapPin size={12} />
-              <span>{profile.city}</span>
-            </div>
-            <div className="flex items-center gap-2 mt-2">
-              <TierBadge score={profile.average_score} size="md" />
-              {currentStreak > 0 && <StreakBadge streak={currentStreak} size="md" />}
+      {/* Profile hero */}
+      <div className="mx-4 bg-surface border border-border rounded-2xl overflow-hidden">
+        {photos.length > 0 ? (
+          <div className="relative w-full aspect-[3/2]">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={photos[0].url}
+              alt={profile.name}
+              className="absolute inset-0 w-full h-full object-cover"
+            />
+            <div
+              className="absolute inset-x-0 bottom-0 h-28 pointer-events-none"
+              style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.55) 0%, transparent 100%)' }}
+            />
+            <div className="absolute bottom-4 left-4">
+              <h1 className="font-display font-bold text-2xl text-white leading-tight">
+                {profile.name}, {profile.age}
+              </h1>
+              <p className="text-white/70 font-body text-sm">{profile.city}</p>
             </div>
           </div>
-
-          {/* Score — bottom right */}
-          {profile.rating_count > 0 && (
-            <div className="text-right flex-shrink-0 ml-3">
-              <div
-                className="font-display font-bold text-4xl leading-none drop-shadow-lg"
-                style={{ color: TIER_COLORS[tier] }}
-              >
-                {displayScore(profile.average_score)}
-              </div>
-              <div className="text-xs text-cream/50 mt-0.5">{profile.rating_count} ratings</div>
-            </div>
+        ) : (
+          <div className="w-full aspect-[3/2] bg-border-soft flex items-center justify-center">
+            <Logo size="xl" />
+          </div>
+        )}
+        <div className="px-4 py-3 flex items-center gap-2 flex-wrap">
+          <span className="text-xs px-2.5 py-1 rounded-full border border-border-soft bg-bg text-muted font-body">
+            {HERE_FOR_LABELS[profile.here_for]}
+          </span>
+          {profile.height_cm && (
+            <span className="text-xs px-2.5 py-1 rounded-full border border-border-soft bg-bg text-muted font-body">
+              {formatHeight(profile.height_cm)}
+            </span>
           )}
         </div>
       </div>
 
-      {/* Here for pill */}
-      <div className="px-4 pt-3 pb-2">
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-muted font-body">Here for</span>
-          <span className="text-xs px-2 py-0.5 rounded-full border border-rim text-cream/70 font-body">
-            {HERE_FOR_LABELS[profile.here_for]}
-          </span>
-        </div>
-      </div>
-
-      {/* Stats row */}
-      <div className="grid grid-cols-3 gap-3 px-4 mt-4">
+      {/* Stats */}
+      <div className="grid grid-cols-2 gap-3 mx-4 mt-4">
         {[
-          { value: profile.rating_count, label: 'Ratings received' },
-          { value: matchCount,           label: 'Matches' },
-          { value: ratingsGiven,         label: 'Ratings given' },
+          { value: matchCount, label: 'Matches' },
+          { value: answersCount, label: 'Questions answered' },
         ].map(({ value, label }) => (
-          <div key={label} className="bg-surface border border-rim rounded-xl p-3 text-center">
-            <div className="font-display font-bold text-xl text-cream">{value}</div>
-            <div className="text-xs text-muted font-body leading-tight mt-0.5">{label}</div>
+          <div key={label} className="bg-surface border border-border rounded-xl p-3 text-center">
+            <div className="font-display font-bold text-2xl text-ink">{value}</div>
+            <div className="text-xs text-muted font-body mt-0.5">{label}</div>
           </div>
         ))}
       </div>
 
-      {/* Subscription card */}
-      <div
-        className="mx-4 mt-5 rounded-2xl border p-4"
-        style={{
-          borderColor: subscriptionTier === 'free' ? '#2c2228' : `${subscriptionColor}40`,
-          background: subscriptionTier === 'free' ? '#1c1618' : `${subscriptionColor}08`,
-        }}
-      >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            {SubscriptionIcon && <SubscriptionIcon size={16} style={{ color: subscriptionColor }} />}
-            <span className="text-sm font-body font-semibold" style={{ color: subscriptionColor }}>
-              {subscriptionLabel}
-            </span>
+      {/* Questions CTA */}
+      <div className="mx-4 mt-4 bg-surface border border-border rounded-2xl p-4 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-full bg-accent/10 flex items-center justify-center flex-shrink-0">
+            <BookOpen size={14} className="text-accent" />
           </div>
-          {subscriptionTier === 'free' && (
-            <Link
-              href="/subscribe"
-              className="text-xs font-body font-semibold text-[#e8c46a] border border-[#e8c46a]/30 px-2.5 py-1 rounded-lg hover:bg-[#e8c46a]/10 transition-colors"
-            >
-              Upgrade
-            </Link>
-          )}
-          {subscriptionTier !== 'free' && (
-            <Link
-              href="/subscribe"
-              className="text-xs text-muted font-body hover:text-cream transition-colors"
-            >
-              Manage
-            </Link>
-          )}
+          <div>
+            <p className="font-body font-semibold text-ink text-sm">Answer more questions</p>
+            <p className="text-xs text-muted font-body">Better answers = better matches</p>
+          </div>
         </div>
-        {subscriptionTier === 'free' && (
-          <p className="mt-1.5 text-xs text-muted font-body">
-            Upgrade to see who rates you and unlock convince me messages.
-          </p>
-        )}
+        <Link
+          href="/questions"
+          className="text-xs font-body font-medium text-accent border border-accent/30 px-3 py-1.5 rounded-lg hover:bg-accent/5 transition-colors flex-shrink-0"
+        >
+          Open
+        </Link>
       </div>
 
-      {/* Hot streak boost (Premium only) */}
-      {subscriptionTier === 'premium' && (
-        <HotStreakBanner
-          activatedAt={boostActivatedAt}
-          usedThisWeek={boostUsedThisWeek && !initialBoostActive}
-        />
-      )}
-
-      {/* Profile completion quests */}
-      {!allQuestsDone && (
-        <div className="mx-4 mt-5 bg-surface border border-rim rounded-2xl p-4 space-y-3">
-          <div className="flex items-center gap-2">
-            <Sparkles size={14} className="text-[#e8c46a]" />
-            <h3 className="font-body font-semibold text-cream text-sm">Complete your profile</h3>
-            <span className="text-xs text-muted font-body ml-auto">{questsDone}/3</span>
-          </div>
-          <div className="space-y-2">
-            {[
-              { done: questPhotos, label: 'Add 3+ photos', hint: 'reaching more people' },
-              { done: questPrompts, label: 'Answer both prompts', hint: 'reaching more people' },
-              { done: questAge, label: 'Set age preference', hint: 'reaching more people' },
-            ].map(({ done, label, hint }) => (
-              <div
-                key={label}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border text-xs font-body ${
-                  done
-                    ? 'border-[#2db896]/30 bg-[#2db896]/5 text-cream'
-                    : 'border-rim bg-bg text-muted'
-                }`}
-              >
-                <span
-                  className={`w-5 h-5 rounded-full border flex items-center justify-center flex-shrink-0 ${
-                    done ? 'border-[#2db896] bg-[#2db896]' : 'border-rim'
-                  }`}
-                >
-                  {done && <Check size={10} className="text-bg" strokeWidth={3} />}
-                </span>
-                <span className="flex-1">{label}</span>
-                {done && (
-                  <span className="text-[#2db896] flex items-center gap-1 flex-shrink-0">
-                    <TrendingUp size={10} /> {hint}
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {allQuestsDone && (
-        <div className="mx-4 mt-5 rounded-2xl border border-[#2db896]/30 bg-[#2db896]/5 p-4 flex items-center gap-3">
-          <span className="text-lg">✓</span>
+      {/* Subscription */}
+      <div className="mx-4 mt-4 bg-surface border border-border rounded-2xl p-4 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          {isPaid && <Zap size={14} className="text-accent flex-shrink-0" />}
           <div>
-            <p className="text-sm font-body font-semibold text-[#2db896]">Profile complete</p>
-            <p className="text-xs text-muted font-body">You&apos;re reaching the maximum number of people.</p>
+            <p className="font-body font-semibold text-ink text-sm">
+              {isPaid ? 'ValiDate Plus' : 'Free plan'}
+            </p>
+            {!isPaid && (
+              <p className="text-xs text-muted font-body">Upgrade to unlock premium features</p>
+            )}
           </div>
         </div>
-      )}
+        <Link
+          href="/subscribe"
+          className="text-xs font-body text-muted hover:text-ink-2 transition-colors flex-shrink-0"
+        >
+          {isPaid ? 'Manage' : 'Upgrade →'}
+        </Link>
+      </div>
 
       {/* Photos */}
-      <div className="mx-4 mt-5 bg-surface border border-rim rounded-2xl p-4">
-        <h3 className="font-body font-semibold text-cream text-sm mb-4">My photos</h3>
+      <div className="mx-4 mt-4 bg-surface border border-border rounded-2xl p-4">
+        <h3 className="font-body font-semibold text-ink text-sm mb-4">My photos</h3>
         <PhotoGrid initialPhotos={photos} />
       </div>
 
       {/* Prompts */}
-      <div className="mx-4 mt-5 bg-surface border border-rim rounded-2xl p-4">
+      <div className="mx-4 mt-4 bg-surface border border-border rounded-2xl p-4">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="font-body font-semibold text-cream text-sm">My prompts</h3>
+          <h3 className="font-body font-semibold text-ink text-sm">My prompts</h3>
           {!editingPrompts ? (
             <button
               onClick={() => setEditingPrompts(true)}
-              className="flex items-center gap-1.5 text-xs text-muted hover:text-cream transition-colors font-body"
+              className="flex items-center gap-1.5 text-xs text-muted hover:text-ink-2 transition-colors font-body"
             >
               <Pencil size={12} /> Edit
             </button>
           ) : (
             <button
               onClick={cancelPromptEdit}
-              className="flex items-center gap-1.5 text-xs text-muted hover:text-cream transition-colors font-body"
+              className="flex items-center gap-1.5 text-xs text-muted hover:text-ink-2 transition-colors font-body"
             >
               <X size={12} /> Cancel
             </button>
@@ -449,29 +289,25 @@ export function ProfileClient({
         </div>
 
         {!editingPrompts ? (
-          /* Display mode */
           savedPrompts.p1q ? (
             <div className="space-y-3">
               {savedPrompts.p1q && savedPrompts.p1a && (
-                <div className="bg-bg rounded-xl px-3 py-3 space-y-1">
+                <div className="bg-bg rounded-xl px-4 py-3 space-y-1 border border-border-soft">
                   <p className="text-xs text-muted font-body">{savedPrompts.p1q}</p>
-                  <p className="text-sm text-cream font-body leading-snug">{savedPrompts.p1a}</p>
+                  <p className="text-sm text-ink-2 font-serif italic leading-snug">{savedPrompts.p1a}</p>
                 </div>
               )}
               {savedPrompts.p2q && savedPrompts.p2a && (
-                <div className="bg-bg rounded-xl px-3 py-3 space-y-1">
+                <div className="bg-bg rounded-xl px-4 py-3 space-y-1 border border-border-soft">
                   <p className="text-xs text-muted font-body">{savedPrompts.p2q}</p>
-                  <p className="text-sm text-cream font-body leading-snug">{savedPrompts.p2a}</p>
+                  <p className="text-sm text-ink-2 font-serif italic leading-snug">{savedPrompts.p2a}</p>
                 </div>
               )}
             </div>
           ) : (
-            <p className="text-xs text-muted font-body text-center py-4">
-              No prompts set yet. Tap Edit to add them.
-            </p>
+            <p className="text-xs text-muted font-body text-center py-4">No prompts set yet. Tap Edit to add them.</p>
           )
         ) : (
-          /* Edit mode */
           <div className="space-y-3">
             <p className="text-xs text-muted font-body">
               Pick 2 prompts and answer them.{' '}
@@ -488,15 +324,15 @@ export function ProfileClient({
                     disabled={locked}
                     className={`w-full text-left px-3 py-3 rounded-xl border font-body text-xs transition-all flex items-start gap-2.5 ${
                       picked
-                        ? 'border-accent bg-accent/15 text-cream'
+                        ? 'border-accent bg-accent/8 text-ink'
                         : locked
-                        ? 'border-rim bg-bg text-muted/40 cursor-not-allowed'
-                        : 'border-rim bg-bg text-muted hover:border-accent/40 hover:text-cream'
+                        ? 'border-border bg-bg text-muted/40 cursor-not-allowed'
+                        : 'border-border bg-bg text-muted hover:border-accent/40 hover:text-ink'
                     }`}
                   >
                     <span
                       className={`mt-0.5 w-3.5 h-3.5 rounded flex-shrink-0 flex items-center justify-center border transition-all ${
-                        picked ? 'border-accent bg-accent text-bg' : 'border-rim'
+                        picked ? 'border-accent bg-accent text-white' : 'border-border'
                       }`}
                     >
                       {picked && <Check size={9} strokeWidth={3} />}
@@ -511,7 +347,7 @@ export function ProfileClient({
                       placeholder="Your answer…"
                       rows={3}
                       maxLength={280}
-                      className="w-full px-3 py-2.5 rounded-xl bg-bg border border-accent/40 text-cream placeholder-muted font-body text-sm outline-none focus:border-accent/70 transition-colors resize-none"
+                      className="w-full px-3 py-2.5 rounded-xl bg-bg border border-accent/30 text-ink placeholder-muted font-body text-sm outline-none focus:border-accent transition-colors resize-none"
                     />
                   )}
                 </div>
@@ -525,7 +361,7 @@ export function ProfileClient({
             <button
               onClick={handlePromptsSave}
               disabled={savingPrompts}
-              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-accent text-cream font-body text-sm font-medium hover:bg-accent/90 transition-colors disabled:opacity-60 mt-1"
+              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-accent text-white font-body text-sm font-medium hover:bg-accent-soft transition-colors disabled:opacity-60"
             >
               {savingPrompts ? 'Saving…' : <><Check size={14} /> Save prompts</>}
             </button>
@@ -533,9 +369,35 @@ export function ProfileClient({
         )}
       </div>
 
+      {/* Height */}
+      <div className="mx-4 mt-4 bg-surface border border-border rounded-2xl p-4">
+        <h3 className="font-body font-semibold text-ink text-sm mb-4">Height</h3>
+        <div className="space-y-3">
+          <HeightPicker
+            value={editHeight}
+            onChange={(v) => { setEditHeight(v); setHeightSaved(false) }}
+          />
+          {editHeight !== null && (
+            <p className="text-xs text-muted font-body text-center">{formatHeight(editHeight)}</p>
+          )}
+          {heightError && <p className="text-xs text-accent font-body">{heightError}</p>}
+          <button
+            onClick={handleHeightSave}
+            disabled={savingHeight || heightSaved}
+            className={`w-full py-2.5 rounded-xl text-sm font-body font-medium transition-colors ${
+              heightSaved
+                ? 'bg-[#2a7d5f]/15 border border-[#2a7d5f]/30 text-[#2a7d5f]'
+                : 'bg-accent text-white hover:bg-accent-soft disabled:opacity-60'
+            }`}
+          >
+            {savingHeight ? 'Saving…' : heightSaved ? '✓ Height saved' : 'Save height'}
+          </button>
+        </div>
+      </div>
+
       {/* Gender & preference */}
-      <div className="mx-4 mt-5 bg-surface border border-rim rounded-2xl p-4">
-        <h3 className="font-body font-semibold text-cream text-sm mb-4">Gender &amp; preference</h3>
+      <div className="mx-4 mt-4 bg-surface border border-border rounded-2xl p-4">
+        <h3 className="font-body font-semibold text-ink text-sm mb-4">Gender &amp; preference</h3>
         <div className="space-y-4">
           <div className="space-y-2">
             <p className="text-xs text-muted font-body">I am a</p>
@@ -546,8 +408,8 @@ export function ProfileClient({
                   onClick={() => { setEditGender(g); setGenderSaved(false) }}
                   className={`py-2.5 px-3 rounded-xl border font-body text-xs transition-all text-left flex items-center justify-between ${
                     editGender === g
-                      ? 'border-accent bg-accent/15 text-cream'
-                      : 'border-rim bg-bg text-muted hover:border-accent/40 hover:text-cream'
+                      ? 'border-accent bg-accent/8 text-ink'
+                      : 'border-border bg-bg text-muted hover:border-accent/30 hover:text-ink'
                   }`}
                 >
                   <span>{GENDER_LABELS[g]}</span>
@@ -566,8 +428,8 @@ export function ProfileClient({
                   onClick={() => { setEditShowMe(s); setGenderSaved(false) }}
                   className={`py-2.5 rounded-xl border font-body text-xs transition-all ${
                     editShowMe === s
-                      ? 'border-accent bg-accent/15 text-cream'
-                      : 'border-rim bg-bg text-muted hover:border-accent/40 hover:text-cream'
+                      ? 'border-accent bg-accent/8 text-ink'
+                      : 'border-border bg-bg text-muted hover:border-accent/30 hover:text-ink'
                   }`}
                 >
                   {SHOW_ME_LABELS[s]}
@@ -576,17 +438,15 @@ export function ProfileClient({
             </div>
           </div>
 
-          {genderError && (
-            <p className="text-xs text-accent font-body">{genderError}</p>
-          )}
+          {genderError && <p className="text-xs text-accent font-body">{genderError}</p>}
 
           <button
             onClick={handleGenderSave}
             disabled={savingGender || genderSaved}
             className={`w-full py-2.5 rounded-xl text-sm font-body font-medium transition-colors ${
               genderSaved
-                ? 'bg-[#2db896]/20 border border-[#2db896]/40 text-[#2db896]'
-                : 'bg-accent text-cream hover:bg-accent/90 disabled:opacity-60'
+                ? 'bg-[#2a7d5f]/15 border border-[#2a7d5f]/30 text-[#2a7d5f]'
+                : 'bg-accent text-white hover:bg-accent-soft disabled:opacity-60'
             }`}
           >
             {savingGender ? 'Saving…' : genderSaved ? '✓ Saved' : 'Save'}
@@ -595,28 +455,26 @@ export function ProfileClient({
       </div>
 
       {/* Discover preferences */}
-      <div className="mx-4 mt-5 bg-surface border border-rim rounded-2xl p-4">
-        <h3 className="font-body font-semibold text-cream text-sm mb-4">Discover preferences</h3>
+      <div className="mx-4 mt-4 bg-surface border border-border rounded-2xl p-4">
+        <h3 className="font-body font-semibold text-ink text-sm mb-4">Discover preferences</h3>
         <div className="space-y-3">
           <p className="text-xs text-muted font-body">
             Show me people aged{' '}
-            <span className="text-cream">{ageMin}–{ageMax === 65 ? '65+' : ageMax}</span>
+            <span className="text-ink">{ageMin}–{ageMax === 65 ? '65+' : ageMax}</span>
           </p>
           <AgeRangeSlider
             min={ageMin}
             max={ageMax}
             onChange={(lo, hi) => { setAgeMin(lo); setAgeMax(hi); setAgeSaved(false) }}
           />
-          {ageError && (
-            <p className="text-xs text-accent font-body">{ageError}</p>
-          )}
+          {ageError && <p className="text-xs text-accent font-body">{ageError}</p>}
           <button
             onClick={handleAgeSave}
             disabled={savingAge || ageSaved}
             className={`w-full py-2.5 rounded-xl text-sm font-body font-medium transition-colors ${
               ageSaved
-                ? 'bg-[#2db896]/20 border border-[#2db896]/40 text-[#2db896]'
-                : 'bg-accent text-cream hover:bg-accent/90 disabled:opacity-60'
+                ? 'bg-[#2a7d5f]/15 border border-[#2a7d5f]/30 text-[#2a7d5f]'
+                : 'bg-accent text-white hover:bg-accent-soft disabled:opacity-60'
             }`}
           >
             {savingAge ? 'Saving…' : ageSaved ? '✓ Preferences saved' : 'Save preferences'}
@@ -624,68 +482,21 @@ export function ProfileClient({
         </div>
       </div>
 
-      {/* Tier progress */}
-      <div className="mx-4 mt-4 bg-surface border border-rim rounded-2xl p-4">
-        <h3 className="font-body font-semibold text-cream text-sm mb-4">Tier progress</h3>
-        <TierProgressBar score={profile.average_score} />
-      </div>
-
-      {/* Streak perks */}
-      <div className="mx-4 mt-4 bg-surface border border-rim rounded-2xl p-4">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="font-body font-semibold text-cream text-sm">Streak perks</h3>
-          <span className="text-xs text-muted font-body">{currentStreak} day streak</span>
-        </div>
-
-        {perk && (
-          <div className="mb-3 px-3 py-2 rounded-xl bg-[#e8c46a]/10 border border-[#e8c46a]/30 text-xs text-[#e8c46a] font-body">
-            ✦ Active: {perk}
-          </div>
-        )}
-
-        <div className="space-y-2">
-          {STREAK_PERKS.map(({ days, label, icon }) => {
-            const unlocked = currentStreak >= days
-            return (
-              <div
-                key={days}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border text-xs font-body transition-colors ${
-                  unlocked
-                    ? 'border-[#e8c46a]/40 bg-[#e8c46a]/8 text-cream'
-                    : 'border-rim bg-bg text-muted'
-                }`}
-              >
-                <span className="text-base">{icon}</span>
-                <div className="flex-1">
-                  <span className={unlocked ? 'text-cream' : 'text-muted'}>{label}</span>
-                </div>
-                <span className={`flex-shrink-0 ${unlocked ? 'text-[#e8c46a]' : 'text-rim'}`}>
-                  {unlocked ? '✓' : `${days}d`}
-                </span>
-              </div>
-            )
-          })}
-        </div>
-
-        {nextPerk && (
-          <p className="mt-3 text-xs text-muted font-body text-center">
-            {nextPerk.days - currentStreak} more days to unlock: {nextPerk.perk}
-          </p>
-        )}
-      </div>
-
       {/* Daily confidence */}
-      <div className="mx-4 mt-4 bg-surface border border-rim rounded-2xl p-4">
-        <h3 className="font-body font-semibold text-cream text-sm mb-3">Daily confidence</h3>
+      <div className="mx-4 mt-4 bg-surface border border-border rounded-2xl p-4">
+        <h3 className="font-body font-semibold text-ink text-sm mb-3">Daily confidence</h3>
+        <p className="text-xs text-muted font-body mb-4">
+          How confident do you feel today? This shows on your profile for matches to see.
+        </p>
         <div className="space-y-3">
           <div className="flex items-center gap-4">
             <div
               className="w-12 h-12 rounded-full border-2 flex items-center justify-center flex-shrink-0"
-              style={{ borderColor: `hsl(${(confidence - 1) * 14}, 60%, 55%)` }}
+              style={{ borderColor: `hsl(${(confidence - 1) * 14}, 50%, 50%)` }}
             >
               <span
                 className="font-display font-bold text-lg"
-                style={{ color: `hsl(${(confidence - 1) * 14}, 60%, 65%)` }}
+                style={{ color: `hsl(${(confidence - 1) * 14}, 50%, 40%)` }}
               >
                 {confidence}
               </span>
@@ -700,24 +511,23 @@ export function ProfileClient({
               className="flex-1 accent-accent"
             />
           </div>
-
           <button
             onClick={handleConfidenceSave}
             disabled={savingConf || confSaved}
             className={`w-full py-2.5 rounded-xl text-sm font-body font-medium transition-colors ${
               confSaved
-                ? 'bg-[#2db896]/20 border border-[#2db896]/40 text-[#2db896]'
-                : 'bg-accent text-cream hover:bg-accent/90 disabled:opacity-60'
+                ? 'bg-[#2a7d5f]/15 border border-[#2a7d5f]/30 text-[#2a7d5f]'
+                : 'bg-accent text-white hover:bg-accent-soft disabled:opacity-60'
             }`}
           >
-            {savingConf ? 'Saving…' : confSaved ? '✓ Confidence saved for today' : 'Save today\'s confidence'}
+            {savingConf ? 'Saving…' : confSaved ? '✓ Confidence saved for today' : "Save today's confidence"}
           </button>
         </div>
       </div>
 
       {/* Account info */}
-      <div className="mx-4 mt-4 bg-surface border border-rim rounded-2xl p-4 space-y-2">
-        <h3 className="font-body font-semibold text-cream text-sm mb-1">Account</h3>
+      <div className="mx-4 mt-4 bg-surface border border-border rounded-2xl p-4 space-y-2">
+        <h3 className="font-body font-semibold text-ink text-sm mb-1">Account</h3>
         <div className="text-xs text-muted font-body">{email}</div>
         <div className="text-xs text-muted font-body">
           Member since {new Date(profile.created_at).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}

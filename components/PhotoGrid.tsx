@@ -38,7 +38,6 @@ export function PhotoGrid({ initialPhotos }: Props) {
       setPhotos((prev) => [...prev, result.photo])
     }
     setUploading(false)
-    // Reset so the same file can be re-selected after error
     if (fileRef.current) fileRef.current.value = ''
   }
 
@@ -63,19 +62,19 @@ export function PhotoGrid({ initialPhotos }: Props) {
     const next = [...photos]
     ;[next[idx], next[newIdx]] = [next[newIdx], next[idx]]
     const reindexed = next.map((p, i) => ({ ...p, position: i }))
-    setPhotos(reindexed) // optimistic
+    setPhotos(reindexed)
 
     const result = await reorderUserPhotos(reindexed.map((p) => p.id))
     if ('error' in result) {
       setError(result.error)
-      setPhotos(photos) // revert on failure
+      setPhotos(photos)
     }
   }
 
   return (
     <div className="space-y-3">
       {error && (
-        <p className="text-xs text-accent bg-accent/10 border border-accent/30 rounded-xl px-3 py-2.5 font-body">
+        <p className="text-xs text-accent bg-accent/10 border border-accent/20 rounded-xl px-3 py-2.5 font-body">
           {error}
         </p>
       )}
@@ -89,7 +88,7 @@ export function PhotoGrid({ initialPhotos }: Props) {
             <div
               key={photo.id}
               className={cn(
-                'relative aspect-square rounded-xl overflow-hidden bg-rim group',
+                'relative aspect-square rounded-xl overflow-hidden bg-border-soft group',
                 isDeleting && 'opacity-40'
               )}
             >
@@ -101,16 +100,13 @@ export function PhotoGrid({ initialPhotos }: Props) {
                 sizes="(max-width: 640px) 33vw, 150px"
               />
 
-              {/* Primary label */}
               {isPrimary && (
                 <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-full bg-accent/90 backdrop-blur-sm text-[9px] text-white font-body font-semibold uppercase tracking-wider pointer-events-none">
                   Primary
                 </div>
               )}
 
-              {/* Controls — visible on hover */}
-              <div className="absolute inset-0 bg-black/55 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-between p-1.5">
-                {/* Delete */}
+              <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-between p-1.5">
                 <button
                   onClick={() => handleDelete(photo.id)}
                   disabled={isDeleting}
@@ -119,7 +115,6 @@ export function PhotoGrid({ initialPhotos }: Props) {
                   <Trash2 size={11} className="text-white" />
                 </button>
 
-                {/* Reorder arrows */}
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => move(idx, -1)}
@@ -144,15 +139,14 @@ export function PhotoGrid({ initialPhotos }: Props) {
           )
         })}
 
-        {/* Add-photo slot */}
         {canAdd && (
           <button
             onClick={() => fileRef.current?.click()}
             disabled={uploading}
             className={cn(
-              'aspect-square rounded-xl border-2 border-dashed border-rim',
+              'aspect-square rounded-xl border-2 border-dashed border-border',
               'hover:border-accent/50 hover:bg-accent/5 transition-colors',
-              'flex flex-col items-center justify-center gap-1.5 text-muted hover:text-cream',
+              'flex flex-col items-center justify-center gap-1.5 text-muted hover:text-ink-2',
               uploading && 'opacity-50 cursor-wait'
             )}
           >
@@ -173,8 +167,7 @@ export function PhotoGrid({ initialPhotos }: Props) {
       </div>
 
       <p className="text-[11px] text-muted font-body">
-        {photos.length} / 10 photos · Hover a photo to reorder or delete ·
-        First photo is your primary
+        {photos.length} / 10 photos · Hover a photo to reorder or delete · First photo is your primary
       </p>
 
       <input

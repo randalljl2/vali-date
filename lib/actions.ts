@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { uploadFile, deleteFile } from '@/lib/supabase/admin'
-import type { HereFor, UserPhoto, SubscriptionTier, Gender, ShowMe } from '@/types'
+import type { HereFor, UserPhoto, Gender, ShowMe, SubscriptionTier, UserAnswer } from '@/types'
 
 // ── Auth ─────────────────────────────────────────────────────
 
@@ -30,11 +30,6 @@ export async function signOut() {
 
 // ── Photo management ─────────────────────────────────────────
 
-/**
- * Upload a photo for use during onboarding (no DB write yet).
- * Returns the public URL + storage path so completeOnboarding
- * can persist both the user row and user_photos rows atomically.
- */
 export async function uploadOnboardingPhoto(
   formData: FormData
 ): Promise<{ url: string; path: string } | { error: string }> {
@@ -48,25 +43,14 @@ export async function uploadOnboardingPhoto(
   return uploadFile(user.id, file)
 }
 
-/**
- * Remove a staged onboarding photo from storage before the profile is saved.
- * Only deletes files inside the calling user's own folder.
- */
 export async function deleteOnboardingPhoto(path: string): Promise<void> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return
-
-  // Guard: only allow deleting from the user's own storage folder
   if (!path.startsWith(`${user.id}/`)) return
-
   await deleteFile(path)
 }
 
-/**
- * Upload a photo for an existing user — creates the user_photos row
- * and keeps users.photo_url in sync with position-0 photo.
- */
 export async function uploadUserPhoto(
   formData: FormData
 ): Promise<{ photo: UserPhoto } | { error: string }> {
@@ -74,7 +58,6 @@ export async function uploadUserPhoto(
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
 
-  // Enforce 10-photo cap
   const { count } = await supabase
     .from('user_photos')
     .select('*', { count: 'exact', head: true })
@@ -88,7 +71,6 @@ export async function uploadUserPhoto(
   const result = await uploadFile(user.id, file)
   if ('error' in result) return result
 
-  // Next available position
   const { data: last } = await supabase
     .from('user_photos')
     .select('position')
@@ -110,10 +92,8 @@ export async function uploadUserPhoto(
     return { error: dbErr.message }
   }
 
-  // Keep users.photo_url in sync with primary photo
   if (position === 0) {
-    await supabase
-      .from('users')
+    await supabase.from('users')
       .update({ photo_url: result.url, updated_at: new Date().toISOString() })
       .eq('id', user.id)
   }
@@ -122,10 +102,6 @@ export async function uploadUserPhoto(
   return { photo: photo as UserPhoto }
 }
 
-/**
- * Delete a photo. Removes the storage file, DB row, recompacts
- * positions, and re-syncs users.photo_url.
- */
 export async function deleteUserPhoto(
   photoId: string
 ): Promise<{ success: boolean } | { error: string }> {
@@ -134,63 +110,34 @@ export async function deleteUserPhoto(
   if (!user) return { error: 'Not authenticated' }
 
   const { data: photo } = await supabase
-    .from('user_photos')
-    .select('*')
-    .eq('id', photoId)
-    .eq('user_id', user.id)
-    .single()
+    .from('user_photos').select('*').eq('id', photoId).eq('user_id', user.id).single()
 
   if (!photo) return { error: 'Photo not found' }
 
-  // Derive the storage path from the public URL
-  // URL format: https://<ref>.supabase.co/storage/v1/object/public/photos/<path>
-  const storagePath = new URL(photo.url).pathname
-    .split('/object/public/photos/')[1]
-
-  if (storagePath) {
-    await deleteFile(storagePath)
-  }
+  const storagePath = new URL(photo.url).pathname.split('/object/public/photos/')[1]
+  if (storagePath) await deleteFile(storagePath)
 
   await supabase.from('user_photos').delete().eq('id', photoId)
 
-  // Recompact positions (0-based, no gaps)
   const { data: remaining } = await supabase
-    .from('user_photos')
-    .select('id')
-    .eq('user_id', user.id)
+    .from('user_photos').select('id').eq('user_id', user.id)
     .order('position', { ascending: true })
 
   for (let i = 0; i < (remaining ?? []).length; i++) {
-    await supabase
-      .from('user_photos')
-      .update({ position: i })
-      .eq('id', remaining![i].id)
+    await supabase.from('user_photos').update({ position: i }).eq('id', remaining![i].id)
   }
 
-  // Re-sync primary photo
   const { data: newPrimary } = await supabase
-    .from('user_photos')
-    .select('url')
-    .eq('user_id', user.id)
-    .eq('position', 0)
-    .maybeSingle()
+    .from('user_photos').select('url').eq('user_id', user.id).eq('position', 0).maybeSingle()
 
-  await supabase
-    .from('users')
-    .update({
-      photo_url: newPrimary?.url ?? null,
-      updated_at: new Date().toISOString(),
-    })
+  await supabase.from('users')
+    .update({ photo_url: newPrimary?.url ?? null, updated_at: new Date().toISOString() })
     .eq('id', user.id)
 
   revalidatePath('/profile')
   return { success: true }
 }
 
-/**
- * Persist a new photo order. `orderedIds` must contain ALL photo IDs
- * for the current user in the desired order.
- */
 export async function reorderUserPhotos(
   orderedIds: string[]
 ): Promise<{ success: boolean } | { error: string }> {
@@ -198,37 +145,21 @@ export async function reorderUserPhotos(
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
 
-  // Two-pass update: use temp offset (100+) to avoid unique-constraint
-  // conflicts while positions are in flux, then set final values.
+  // Two-pass to avoid unique constraint conflicts
   for (let i = 0; i < orderedIds.length; i++) {
-    await supabase
-      .from('user_photos')
-      .update({ position: 100 + i })
-      .eq('id', orderedIds[i])
-      .eq('user_id', user.id)
+    await supabase.from('user_photos')
+      .update({ position: 100 + i }).eq('id', orderedIds[i]).eq('user_id', user.id)
   }
   for (let i = 0; i < orderedIds.length; i++) {
-    await supabase
-      .from('user_photos')
-      .update({ position: i })
-      .eq('id', orderedIds[i])
-      .eq('user_id', user.id)
+    await supabase.from('user_photos')
+      .update({ position: i }).eq('id', orderedIds[i]).eq('user_id', user.id)
   }
 
-  // Re-sync primary photo
   const { data: primary } = await supabase
-    .from('user_photos')
-    .select('url')
-    .eq('user_id', user.id)
-    .eq('position', 0)
-    .maybeSingle()
+    .from('user_photos').select('url').eq('user_id', user.id).eq('position', 0).maybeSingle()
 
-  await supabase
-    .from('users')
-    .update({
-      photo_url: primary?.url ?? null,
-      updated_at: new Date().toISOString(),
-    })
+  await supabase.from('users')
+    .update({ photo_url: primary?.url ?? null, updated_at: new Date().toISOString() })
     .eq('id', user.id)
 
   revalidatePath('/profile')
@@ -244,19 +175,23 @@ export async function completeOnboarding(data: {
   here_for: HereFor
   gender: Gender
   show_me: ShowMe
-  /** Ordered list of pre-uploaded photos (storage-only, no DB yet). */
+  height_cm: number | null
   photos: Array<{ url: string }>
   confidence_score: number
   prompt_1_question: string | null
   prompt_1_answer: string | null
   prompt_2_question: string | null
   prompt_2_answer: string | null
+  set_one_answers: Array<{
+    question_number: number
+    answer: 'a' | 'b' | 'c'
+    importance: 1 | 2 | 3
+  }>
 }) {
   const supabase = await createClient()
   const { data: { user }, error: authError } = await supabase.auth.getUser()
   if (authError || !user) return { error: 'Not authenticated' }
 
-  // UPSERT — safe to retry if a previous attempt partially succeeded
   const { error: profileError } = await supabase.from('users').upsert({
     id: user.id,
     name: data.name,
@@ -265,6 +200,7 @@ export async function completeOnboarding(data: {
     here_for: data.here_for,
     gender: data.gender,
     show_me: data.show_me,
+    height_cm: data.height_cm,
     photo_url: data.photos[0]?.url ?? null,
     prompt_1_question: data.prompt_1_question,
     prompt_1_answer: data.prompt_1_answer,
@@ -275,7 +211,7 @@ export async function completeOnboarding(data: {
 
   if (profileError) return { error: profileError.message }
 
-  // Replace any photos from a previous attempt, then insert the full ordered set
+  // Photos
   await supabase.from('user_photos').delete().eq('user_id', user.id)
   if (data.photos.length > 0) {
     await supabase.from('user_photos').insert(
@@ -283,20 +219,31 @@ export async function completeOnboarding(data: {
     )
   }
 
-  // UPSERT daily_confidence — unique on (user_id, date)
+  // Daily confidence
+  const today = new Date().toISOString().split('T')[0]
   await supabase.from('daily_confidence').upsert(
-    { user_id: user.id, score: data.confidence_score },
+    { user_id: user.id, score: data.confidence_score, date: today },
     { onConflict: 'user_id,date' }
   )
 
-  // UPSERT streak — ignore if already exists so we don't reset a running streak
-  await supabase.from('streaks').upsert(
-    { user_id: user.id },
-    { onConflict: 'user_id', ignoreDuplicates: true }
-  )
+  // Set 1 answers — upsert so retries are safe
+  if (data.set_one_answers.length > 0) {
+    await supabase.from('user_answers').upsert(
+      data.set_one_answers.map(a => ({
+        user_id: user.id,
+        question_set: 1,
+        question_number: a.question_number,
+        answer: a.answer,
+        importance: a.importance,
+      })),
+      { onConflict: 'user_id,question_set,question_number' }
+    )
+  }
 
   redirect('/discover')
 }
+
+// ── Profile updates ───────────────────────────────────────────
 
 export async function updateUserPrompts(data: {
   prompt_1_question: string
@@ -308,23 +255,18 @@ export async function updateUserPrompts(data: {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
 
-  const { error } = await supabase
-    .from('users')
-    .update({
-      prompt_1_question: data.prompt_1_question,
-      prompt_1_answer: data.prompt_1_answer,
-      prompt_2_question: data.prompt_2_question,
-      prompt_2_answer: data.prompt_2_answer,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', user.id)
+  const { error } = await supabase.from('users').update({
+    prompt_1_question: data.prompt_1_question,
+    prompt_1_answer: data.prompt_1_answer,
+    prompt_2_question: data.prompt_2_question,
+    prompt_2_answer: data.prompt_2_answer,
+    updated_at: new Date().toISOString(),
+  }).eq('id', user.id)
 
   if (error) return { error: error.message }
   revalidatePath('/profile')
   return { success: true }
 }
-
-// ── Age preference ───────────────────────────────────────────
 
 export async function updateAgePreference(
   min: number,
@@ -334,21 +276,32 @@ export async function updateAgePreference(
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
 
-  const { error } = await supabase
-    .from('users')
-    .update({
-      preferred_age_min: min,
-      preferred_age_max: max,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', user.id)
+  const { error } = await supabase.from('users').update({
+    preferred_age_min: min,
+    preferred_age_max: max,
+    updated_at: new Date().toISOString(),
+  }).eq('id', user.id)
 
   if (error) return { error: error.message }
   revalidatePath('/profile')
   return { success: true }
 }
 
-// ── Gender & preference ───────────────────────────────────────
+export async function updateHeight(
+  heightCm: number | null
+): Promise<{ success: boolean } | { error: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const { error } = await supabase.from('users')
+    .update({ height_cm: heightCm, updated_at: new Date().toISOString() })
+    .eq('id', user.id)
+
+  if (error) return { error: error.message }
+  revalidatePath('/profile')
+  return { success: true }
+}
 
 export async function updateGenderPreference(
   gender: Gender,
@@ -358,276 +311,205 @@ export async function updateGenderPreference(
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
 
-  const { error } = await supabase
-    .from('users')
-    .update({
-      gender,
-      show_me: showMe,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', user.id)
+  const { error } = await supabase.from('users').update({
+    gender,
+    show_me: showMe,
+    updated_at: new Date().toISOString(),
+  }).eq('id', user.id)
 
   if (error) return { error: error.message }
   revalidatePath('/profile')
   return { success: true }
 }
 
-// ── Ratings ──────────────────────────────────────────────────
+// ── Compatibility (server-only helper) ───────────────────────
 
-export async function submitRating(ratedId: string, score: number) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: 'Not authenticated' }
+async function computeCompatibility(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userAId: string,
+  userBId: string
+): Promise<{ score: number | null; sharedCount: number }> {
+  const [{ data: answersA }, { data: answersB }] = await Promise.all([
+    supabase.from('user_answers').select('question_set,question_number,answer,importance').eq('user_id', userAId),
+    supabase.from('user_answers').select('question_set,question_number,answer,importance').eq('user_id', userBId),
+  ])
 
-  const since = new Date()
-  since.setHours(0, 0, 0, 0)
+  if (!answersA || !answersB) return { score: null, sharedCount: 0 }
 
-  const { count } = await supabase
-    .from('ratings')
-    .select('*', { count: 'exact', head: true })
-    .eq('rater_id', user.id)
-    .gte('created_at', since.toISOString())
+  type Ans = { question_set: number; question_number: number; answer: string; importance: number }
+  const mapB = new Map<string, Ans>(
+    (answersB as Ans[]).map(a => [`${a.question_set}-${a.question_number}`, a])
+  )
 
-  if ((count ?? 0) >= 20) return { error: 'Daily rating limit reached (20/day)' }
+  let numerator = 0
+  let denominator = 0
+  let sharedCount = 0
 
-  const { error } = await supabase
-    .from('ratings')
-    .insert({ rater_id: user.id, rated_id: ratedId, score })
+  for (const a of answersA as Ans[]) {
+    const key = `${a.question_set}-${a.question_number}`
+    const b = mapB.get(key)
+    if (!b) continue
 
-  if (error) {
-    if (error.code === '23505') return { success: true, alreadyRated: true }
-    return { error: error.message }
-  }
-
-  // Create a near match record when score = 4
-  if (score === 4) {
-    await supabase
-      .from('near_matches')
-      .upsert(
-        { rater_id: user.id, rated_id: ratedId, score },
-        { onConflict: 'rater_id,rated_id' }
-      )
-  }
-
-  // UUID ordering must be consistent with the trigger (smaller UUID = user_a)
-  const [matchA, matchB] = [user.id, ratedId].sort()
-  const { data: matchRow } = await supabase
-    .from('matches')
-    .select('id')
-    .eq('user_a', matchA)
-    .eq('user_b', matchB)
-    .maybeSingle()
-
-  revalidatePath('/discover')
-  return { success: true, matched: !!matchRow, matchId: matchRow?.id ?? null }
-}
-
-// ── Near Matches & Convince Me ────────────────────────────────
-
-export async function sendConvinceMe(
-  nearMatchId: string,
-  message: string
-): Promise<{ success: boolean } | { error: string }> {
-  if (!message.trim()) return { error: 'Message cannot be empty' }
-  if (message.trim().length > 500) return { error: 'Message too long (max 500 chars)' }
-
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: 'Not authenticated' }
-
-  // Verify user has Plus or Premium
-  const { data: profile } = await supabase
-    .from('users')
-    .select('subscription_tier')
-    .eq('id', user.id)
-    .single()
-
-  if (!profile || profile.subscription_tier === 'free') {
-    return { error: 'Upgrade to Vali Date Plus to send convince me messages' }
-  }
-
-  // Verify this near match belongs to the current user (they are the RATED person)
-  const { data: nearMatch } = await supabase
-    .from('near_matches')
-    .select('id, rater_id, rated_id')
-    .eq('id', nearMatchId)
-    .eq('rated_id', user.id)
-    .single()
-
-  if (!nearMatch) return { error: 'Near match not found' }
-
-  // For Plus users: enforce one convince me per near match
-  if (profile.subscription_tier === 'plus') {
-    const { count } = await supabase
-      .from('convince_me_messages')
-      .select('*', { count: 'exact', head: true })
-      .eq('near_match_id', nearMatchId)
-      .eq('sender_id', user.id)
-
-    if ((count ?? 0) >= 1) {
-      return { error: 'You already sent a convince me for this near match' }
+    sharedCount++
+    if (a.answer === b.answer) {
+      numerator += a.importance + b.importance
+      denominator += a.importance + b.importance
+    } else {
+      denominator += Math.max(a.importance, b.importance)
     }
   }
 
-  // sender = rated person (current user, B), recipient = rater (A)
-  const { error } = await supabase.from('convince_me_messages').insert({
-    sender_id: user.id,
-    recipient_id: nearMatch.rater_id,
-    near_match_id: nearMatchId,
-    message: message.trim(),
-  })
-
-  if (error) return { error: error.message }
-  revalidatePath('/matches')
-  return { success: true }
+  if (sharedCount < 10) return { score: null, sharedCount }
+  return { score: Math.round((numerator / denominator) * 100), sharedCount }
 }
 
-// The rater (A) accepts a convince me from the rated person (B),
-// directly creating the match without requiring a score update.
-export async function acceptConvinceMe(
-  convinceMeId: string
-): Promise<{ success: boolean; matchId: string | null } | { error: string }> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: 'Not authenticated' }
-
-  // Fetch the message — user must be the recipient (A, the original rater)
-  const { data: msg } = await supabase
-    .from('convince_me_messages')
-    .select('id, sender_id, recipient_id, converted_to_match')
-    .eq('id', convinceMeId)
-    .eq('recipient_id', user.id)
-    .single()
-
-  if (!msg) return { error: 'Message not found' }
-  if (msg.converted_to_match) return { error: 'Already matched' }
-
-  // Create the match (A = user.id, B = sender)
-  const [matchA, matchB] = [user.id, msg.sender_id].sort()
-  await supabase.from('matches').insert({ user_a: matchA, user_b: matchB })
-
-  const { data: matchRow } = await supabase
-    .from('matches')
-    .select('id')
-    .eq('user_a', matchA)
-    .eq('user_b', matchB)
-    .maybeSingle()
-
-  // Mark converted
-  await supabase
-    .from('convince_me_messages')
-    .update({ converted_to_match: true })
-    .eq('id', msg.id)
-
-  revalidatePath('/matches')
-  revalidatePath('/discover')
-  return { success: true, matchId: matchRow?.id ?? null }
+async function cacheCompatibility(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userAId: string,
+  userBId: string,
+  score: number,
+  sharedCount: number
+) {
+  const [a, b] = [userAId, userBId].sort()
+  await supabase.from('compatibility_scores').upsert({
+    user_a_id: a,
+    user_b_id: b,
+    score,
+    shared_answers: sharedCount,
+    calculated_at: new Date().toISOString(),
+  }, { onConflict: 'user_a_id,user_b_id' })
 }
 
-// ── Subscriptions ─────────────────────────────────────────────
+// ── Interests & Matching ──────────────────────────────────────
 
-export async function simulateUpgrade(
-  tier: SubscriptionTier
-): Promise<{ success: boolean } | { error: string }> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: 'Not authenticated' }
-
-  const { error: userErr } = await supabase
-    .from('users')
-    .update({ subscription_tier: tier, updated_at: new Date().toISOString() })
-    .eq('id', user.id)
-
-  if (userErr) return { error: userErr.message }
-
-  await supabase.from('subscriptions').upsert({
-    user_id: user.id,
-    tier,
-    started_at: new Date().toISOString(),
-    expires_at: tier === 'free' ? null : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-  }, { onConflict: 'user_id' })
-
-  revalidatePath('/subscribe')
-  revalidatePath('/profile')
-  revalidatePath('/discover')
-  return { success: true }
-}
-
-// ── Hot Streak Boost ──────────────────────────────────────────
-
-export async function activateHotStreakBoost(): Promise<
-  { success: boolean; expiresAt: string } | { error: string }
+export async function expressInterest(
+  recipientId: string
+): Promise<
+  | { status: 'interest_sent' }
+  | { status: 'matched'; matchId: string; score: number }
+  | { status: 'mutual_low_compatibility'; score: number }
+  | { status: 'mutual_low_answers' }
+  | { error: string }
 > {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
+  if (user.id === recipientId) return { error: 'Cannot express interest in yourself' }
 
-  const { data: profile } = await supabase
-    .from('users')
-    .select('subscription_tier, hot_streak_boost_activated_at')
-    .eq('id', user.id)
-    .single()
+  // Insert interest (ignore duplicates)
+  const { error: insertErr } = await supabase.from('interests')
+    .insert({ sender_id: user.id, recipient_id: recipientId })
 
-  if (!profile || profile.subscription_tier !== 'premium') {
-    return { error: 'Hot streak boost is a Premium feature' }
+  if (insertErr && insertErr.code !== '23505') return { error: insertErr.message }
+
+  // Check for mutual interest
+  const { data: mutual } = await supabase.from('interests')
+    .select('id').eq('sender_id', recipientId).eq('recipient_id', user.id).maybeSingle()
+
+  if (!mutual) return { status: 'interest_sent' }
+
+  // Mutual! Check if a match already exists
+  const [a, b] = [user.id, recipientId].sort()
+  const { data: existingMatch } = await supabase.from('matches')
+    .select('id').eq('user_a', a).eq('user_b', b).maybeSingle()
+
+  if (existingMatch) {
+    revalidatePath('/matches')
+    revalidatePath('/discover')
+    return { status: 'matched', matchId: existingMatch.id, score: 100 }
   }
 
-  // Check if boost is still active (within 60 min)
-  if (profile.hot_streak_boost_activated_at) {
-    const activatedAt = new Date(profile.hot_streak_boost_activated_at)
-    const expiresAt = new Date(activatedAt.getTime() + 60 * 60 * 1000)
-    if (expiresAt > new Date()) {
-      return { error: 'Your boost is already active', }
-    }
-    // Check weekly limit (once per 7 days)
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
-    if (activatedAt > sevenDaysAgo) {
-      return { error: 'You can only use your boost once per week' }
-    }
+  // Calculate compatibility
+  const { score, sharedCount } = await computeCompatibility(supabase, user.id, recipientId)
+
+  if (score === null) return { status: 'mutual_low_answers' }
+
+  await cacheCompatibility(supabase, user.id, recipientId, score, sharedCount)
+
+  if (score >= 60) {
+    const { data: newMatch, error: matchErr } = await supabase.from('matches')
+      .insert({ user_a: a, user_b: b })
+      .select('id').single()
+
+    if (matchErr) return { error: matchErr.message }
+
+    revalidatePath('/matches')
+    revalidatePath('/discover')
+    return { status: 'matched', matchId: newMatch.id, score }
   }
 
-  const now = new Date().toISOString()
-  const { error } = await supabase
-    .from('users')
-    .update({ hot_streak_boost_activated_at: now, updated_at: now })
-    .eq('id', user.id)
+  revalidatePath('/matches')
+  revalidatePath('/discover')
+  return { status: 'mutual_low_compatibility', score }
+}
+
+export async function passProfile(
+  targetId: string
+): Promise<{ success: boolean } | { error: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const { error } = await supabase.from('passes')
+    .upsert({ user_id: user.id, passed_id: targetId }, { onConflict: 'user_id,passed_id', ignoreDuplicates: true })
+
+  if (error) return { error: error.message }
+  return { success: true }
+}
+
+// ── Attraction rating (internal only — never exposed in UI) ───
+
+export async function rateAttraction(
+  ratedId: string,
+  score: number
+): Promise<{ success: boolean } | { error: string }> {
+  if (score < 1 || score > 10) return { error: 'Score must be 1–10' }
+
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const { error } = await supabase.from('attraction_ratings').upsert({
+    rater_id: user.id,
+    rated_id: ratedId,
+    score,
+  }, { onConflict: 'rater_id,rated_id' })
+
+  if (error) return { error: error.message }
+  return { success: true }
+}
+
+// ── Questions (Sets 2–4) ──────────────────────────────────────
+
+export async function saveAnswers(
+  answers: Array<{
+    question_set: number
+    question_number: number
+    answer: 'a' | 'b' | 'c'
+    importance: 1 | 2 | 3
+  }>
+): Promise<{ success: boolean } | { error: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const { error } = await supabase.from('user_answers').upsert(
+    answers.map(a => ({ ...a, user_id: user.id })),
+    { onConflict: 'user_id,question_set,question_number' }
+  )
 
   if (error) return { error: error.message }
 
-  const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString()
-  revalidatePath('/profile')
-  return { success: true, expiresAt }
-}
+  // Invalidate cached compatibility scores for this user so they get recalculated
+  const { error: cacheErr } = await supabase.from('compatibility_scores')
+    .delete()
+    .or(`user_a_id.eq.${user.id},user_b_id.eq.${user.id}`)
 
-// ── Score Snapshot (tier movement tracking) ───────────────────
+  if (cacheErr) console.error('Failed to invalidate compatibility cache:', cacheErr.message)
 
-export async function updateScoreSnapshot(): Promise<void> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return
-
-  const { data: profile } = await supabase
-    .from('users')
-    .select('average_score, score_snapshot_at')
-    .eq('id', user.id)
-    .single()
-
-  if (!profile) return
-
-  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
-  const snapshotAt = profile.score_snapshot_at ? new Date(profile.score_snapshot_at) : null
-
-  // Update snapshot if none exists or it's older than 7 days
-  if (!snapshotAt || snapshotAt < sevenDaysAgo) {
-    await supabase
-      .from('users')
-      .update({
-        score_snapshot: profile.average_score,
-        score_snapshot_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', user.id)
-  }
+  revalidatePath('/questions')
+  revalidatePath('/discover')
+  return { success: true }
 }
 
 // ── Messages ─────────────────────────────────────────────────
@@ -650,6 +532,60 @@ export async function sendMessage(matchId: string, content: string) {
   return { success: true }
 }
 
+export async function markMessagesRead(matchId: string): Promise<void> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return
+
+  await supabase.from('messages')
+    .update({ read_at: new Date().toISOString() })
+    .eq('match_id', matchId)
+    .neq('sender_id', user.id)
+    .is('read_at', null)
+}
+
+// ── Subscription ──────────────────────────────────────────────
+
+export async function simulateUpgrade(
+  tier: SubscriptionTier
+): Promise<{ success: boolean } | { error: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const { error } = await supabase.from('users').update({
+    subscription_tier: tier,
+    updated_at: new Date().toISOString(),
+  }).eq('id', user.id)
+
+  if (error) return { error: error.message }
+
+  revalidatePath('/subscribe')
+  revalidatePath('/profile')
+  revalidatePath('/matches')
+  return { success: true }
+}
+
+// ── Daily confidence ──────────────────────────────────────────
+
+export async function updateDailyConfidence(
+  score: number
+): Promise<{ success: boolean } | { error: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const today = new Date().toISOString().split('T')[0]
+  const { error } = await supabase.from('daily_confidence').upsert(
+    { user_id: user.id, score, date: today },
+    { onConflict: 'user_id,date' }
+  )
+
+  if (error) return { error: error.message }
+  revalidatePath('/profile')
+  return { success: true }
+}
+
 // ── Waitlist ──────────────────────────────────────────────────
 
 export async function joinWaitlist(
@@ -658,28 +594,11 @@ export async function joinWaitlist(
   if (!email.trim()) return { error: 'Email is required' }
 
   const supabase = await createClient()
-  const { error } = await supabase
-    .from('waitlist')
-    .upsert({ email: email.trim().toLowerCase() }, { onConflict: 'email', ignoreDuplicates: true })
+  const { error } = await supabase.from('waitlist').upsert(
+    { email: email.trim().toLowerCase() },
+    { onConflict: 'email', ignoreDuplicates: true }
+  )
 
   if (error) return { error: error.message }
-  return { success: true }
-}
-
-// ── Daily confidence ──────────────────────────────────────────
-
-export async function updateDailyConfidence(score: number) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: 'Not authenticated' }
-
-  const today = new Date().toISOString().split('T')[0]
-
-  const { error } = await supabase
-    .from('daily_confidence')
-    .upsert({ user_id: user.id, score, date: today }, { onConflict: 'user_id,date' })
-
-  if (error) return { error: error.message }
-  revalidatePath('/profile')
   return { success: true }
 }

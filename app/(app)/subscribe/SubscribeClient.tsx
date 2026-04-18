@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { simulateUpgrade } from '@/lib/actions'
-import { Crown, Zap, Check, Sparkles } from 'lucide-react'
+import { Check, Zap } from 'lucide-react'
 import type { SubscriptionTier } from '@/types'
 import Link from 'next/link'
 
@@ -10,172 +10,151 @@ interface Props {
   currentTier: SubscriptionTier
 }
 
-const TIERS = [
-  {
-    id: 'free' as SubscriptionTier,
-    name: 'Free',
-    price: null,
-    icon: null,
-    color: '#8a7878',
-    features: [
-      'Anonymous near match alerts',
-      '20 ratings per day',
-      'Basic discover feed',
-    ],
-    cta: 'Current plan',
-  },
-  {
-    id: 'plus' as SubscriptionTier,
-    name: 'Vali Date Plus',
-    price: '$9.99/mo',
-    icon: Zap,
-    color: '#e8c46a',
-    features: [
-      'See exactly who rated you a 4',
-      'Send one "convince me" per near match',
-      'Full rating history',
-      'Everything in Free',
-    ],
-    cta: 'Upgrade to Plus',
-  },
-  {
-    id: 'premium' as SubscriptionTier,
-    name: 'Vali Date Premium',
-    price: '$19.99/mo',
-    icon: Crown,
-    color: '#9b6dff',
-    features: [
-      'See who rated you any score',
-      'Unlimited convince me messages',
-      'Weekly 60-min hot streak boost',
-      'Everything in Plus',
-    ],
-    cta: 'Upgrade to Premium',
-  },
+const FREE_FEATURES = [
+  'Full discover feed with compatibility scores',
+  'Express interest & get matched',
+  'Chat with all your matches',
+  'Answer all 100 compatibility questions',
+  'Daily confidence score',
+]
+
+const PAID_FEATURES = [
+  'Everything in Free',
+  'See who liked you',
+  'Priority placement in discover feed',
+  'Read receipts in chat',
+  'Compatibility insights & breakdown',
 ]
 
 export function SubscribeClient({ currentTier }: Props) {
-  const [loading, setLoading] = useState<SubscriptionTier | null>(null)
-  const [success, setSuccess] = useState<SubscriptionTier | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
   const [activeTier, setActiveTier] = useState(currentTier)
+  const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState(false)
 
-  async function handleUpgrade(tier: SubscriptionTier) {
-    if (tier === activeTier || loading) return
-    setLoading(tier)
+  const isPaid = activeTier !== 'free'
+
+  async function handleUpgrade() {
+    if (isPaid || loading) return
+    setLoading(true)
     setError(null)
+    const result = await simulateUpgrade('plus')
+    setLoading(false)
+    if ('error' in result) { setError(result.error); return }
+    setActiveTier('plus')
+    setSuccess(true)
+    setTimeout(() => setSuccess(false), 3000)
+  }
 
-    const result = await simulateUpgrade(tier)
-    setLoading(null)
-
-    if ('error' in result) {
-      setError(result.error)
-      return
-    }
-
-    setActiveTier(tier)
-    setSuccess(tier)
-    setTimeout(() => setSuccess(null), 3000)
+  async function handleDowngrade() {
+    if (!isPaid || loading) return
+    setLoading(true)
+    setError(null)
+    const result = await simulateUpgrade('free')
+    setLoading(false)
+    if ('error' in result) { setError(result.error); return }
+    setActiveTier('free')
   }
 
   return (
-    <div className="flex flex-col min-h-screen px-4 pt-6 pb-8 gap-6">
+    <div className="flex flex-col min-h-screen px-4 pt-6 pb-8 bg-bg">
       {/* Header */}
-      <div className="text-center space-y-2">
-        <div className="flex items-center justify-center gap-2 mb-1">
-          <Sparkles size={20} className="text-[#e8c46a]" />
-          <h1 className="font-display font-bold text-2xl text-cream">Choose your plan</h1>
-        </div>
-        <p className="text-muted font-body text-sm max-w-xs mx-auto">
-          Unlock more ways to connect and stand out.
+      <div className="text-center space-y-2 mb-8">
+        <h1 className="font-display font-bold text-3xl text-ink">Choose your plan</h1>
+        <p className="text-muted font-body text-sm max-w-xs mx-auto leading-relaxed">
+          ValiDate is free to use. Upgrade for features that help you go deeper.
         </p>
       </div>
 
-      {/* Tier cards */}
-      <div className="space-y-4">
-        {TIERS.map((tier) => {
-          const Icon = tier.icon
-          const isActive = activeTier === tier.id
-          const isLoading = loading === tier.id
-          const isSucceeded = success === tier.id
-          const isDowngrade = TIERS.findIndex(t => t.id === tier.id) < TIERS.findIndex(t => t.id === activeTier)
+      {/* Free plan */}
+      <div className={`rounded-2xl border p-5 space-y-4 transition-all ${
+        !isPaid ? 'border-ink/20 bg-surface' : 'border-border bg-surface'
+      }`}>
+        <div className="flex items-start justify-between">
+          <div>
+            <div className="font-body font-semibold text-ink text-base">Free</div>
+            <div className="text-sm text-muted font-body mt-0.5">Always free</div>
+          </div>
+          {!isPaid && (
+            <span className="text-xs font-body px-2.5 py-1 rounded-full border border-border text-muted">
+              Current plan
+            </span>
+          )}
+        </div>
 
-          return (
-            <div
-              key={tier.id}
-              className="rounded-2xl border p-5 space-y-4 transition-all"
-              style={{
-                borderColor: isActive ? tier.color : '#2c2228',
-                background: isActive ? `${tier.color}08` : '#1c1618',
-              }}
-            >
-              {/* Tier header */}
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-2">
-                  {Icon && <Icon size={18} style={{ color: tier.color }} />}
-                  <div>
-                    <div className="font-body font-semibold text-cream text-sm">{tier.name}</div>
-                    {tier.price && (
-                      <div className="text-xs font-body mt-0.5" style={{ color: tier.color }}>
-                        {tier.price}
-                      </div>
-                    )}
-                  </div>
-                </div>
-                {isActive && (
-                  <span
-                    className="text-xs font-body px-2 py-0.5 rounded-full border"
-                    style={{ color: tier.color, borderColor: `${tier.color}50` }}
-                  >
-                    Current
-                  </span>
-                )}
-              </div>
+        <ul className="space-y-2.5">
+          {FREE_FEATURES.map((f) => (
+            <li key={f} className="flex items-start gap-2.5 text-sm font-body text-ink-2">
+              <Check size={14} className="mt-0.5 flex-shrink-0 text-muted" />
+              <span>{f}</span>
+            </li>
+          ))}
+        </ul>
 
-              {/* Features */}
-              <ul className="space-y-2">
-                {tier.features.map((feature) => (
-                  <li key={feature} className="flex items-start gap-2 text-xs font-body text-muted">
-                    <Check size={12} className="mt-0.5 flex-shrink-0" style={{ color: tier.color }} />
-                    <span>{feature}</span>
-                  </li>
-                ))}
-              </ul>
-
-              {/* CTA */}
-              {!isActive && (
-                <button
-                  onClick={() => handleUpgrade(tier.id)}
-                  disabled={!!loading}
-                  className="w-full py-2.5 rounded-xl text-sm font-body font-semibold transition-colors disabled:opacity-60"
-                  style={{
-                    backgroundColor: isDowngrade ? 'transparent' : tier.color,
-                    color: isDowngrade ? tier.color : '#0c0a0b',
-                    border: isDowngrade ? `1px solid ${tier.color}50` : 'none',
-                  }}
-                >
-                  {isLoading ? 'Upgrading…' : isSucceeded ? '✓ Done!' : isDowngrade ? 'Switch to this plan' : tier.cta}
-                </button>
-              )}
-            </div>
-          )
-        })}
+        {isPaid && (
+          <button
+            onClick={handleDowngrade}
+            disabled={loading}
+            className="w-full py-2.5 rounded-xl text-sm font-body border border-border text-muted hover:text-ink-2 hover:border-ink/20 transition-colors disabled:opacity-60"
+          >
+            {loading ? 'Switching…' : 'Switch to Free'}
+          </button>
+        )}
       </div>
 
-      {/* Simulated upgrade notice */}
-      <div className="bg-surface border border-rim rounded-xl px-4 py-3 text-xs text-muted font-body text-center">
-        Payment processing coming soon. The &ldquo;Simulate upgrade&rdquo; button sets your tier directly for testing.
+      {/* Paid plan */}
+      <div className={`mt-4 rounded-2xl border p-5 space-y-4 transition-all ${
+        isPaid ? 'border-accent/40 bg-accent/5' : 'border-border bg-surface'
+      }`}>
+        <div className="flex items-start justify-between">
+          <div className="flex items-center gap-2">
+            <Zap size={16} className="text-accent flex-shrink-0" />
+            <div>
+              <div className="font-body font-semibold text-ink text-base">ValiDate Plus</div>
+              <div className="text-sm font-body mt-0.5" style={{ color: '#7a2535' }}>$7.99 / month</div>
+            </div>
+          </div>
+          {isPaid && (
+            <span className="text-xs font-body px-2.5 py-1 rounded-full border border-accent/30 text-accent">
+              Current plan
+            </span>
+          )}
+        </div>
+
+        <ul className="space-y-2.5">
+          {PAID_FEATURES.map((f) => (
+            <li key={f} className="flex items-start gap-2.5 text-sm font-body text-ink-2">
+              <Check size={14} className="mt-0.5 flex-shrink-0 text-accent" />
+              <span>{f}</span>
+            </li>
+          ))}
+        </ul>
+
+        {!isPaid && (
+          <button
+            onClick={handleUpgrade}
+            disabled={loading}
+            className="w-full py-3 rounded-xl text-sm font-body font-semibold bg-accent text-white hover:bg-accent-soft transition-colors disabled:opacity-60"
+          >
+            {loading ? 'Upgrading…' : success ? '✓ Upgraded!' : 'Upgrade to Plus'}
+          </button>
+        )}
       </div>
 
       {error && (
-        <p className="text-accent text-xs font-body text-center">{error}</p>
+        <p className="text-accent text-xs font-body text-center mt-4">{error}</p>
       )}
+
+      {/* Simulated notice */}
+      <div className="mt-5 bg-surface border border-border rounded-xl px-4 py-3 text-xs text-muted font-body text-center">
+        Payment processing coming soon. The upgrade button sets your tier directly for testing.
+      </div>
 
       <Link
         href="/profile"
-        className="text-center text-xs text-muted font-body hover:text-cream transition-colors"
+        className="mt-5 text-center text-xs text-muted font-body hover:text-ink-2 transition-colors"
       >
-        Back to profile
+        ← Back to profile
       </Link>
     </div>
   )

@@ -2,7 +2,7 @@ import { MapPin } from 'lucide-react'
 import { TierBadge } from './TierBadge'
 import { StreakBadge } from './StreakBadge'
 import { PhotoCarousel } from './PhotoCarousel'
-import { getTier, TIER_COLORS, getRatingColor, displayScore } from '@/lib/utils'
+import { getTier, TIER_COLORS, getRatingColor, displayScore, formatHeight } from '@/lib/utils'
 import { HERE_FOR_LABELS } from '@/types'
 import type { UserProfile, UserPhoto, Streak } from '@/types'
 import { cn } from '@/lib/utils'
@@ -73,9 +73,15 @@ export function ProfileCard({ user, photos = [], streak, confidenceScore, classN
             <h3 className="font-display font-bold text-xl text-cream leading-tight">
               {user.name}, <span className="font-normal">{user.age}</span>
             </h3>
-            <div className="flex items-center gap-1 text-muted text-sm mt-0.5">
-              <MapPin size={12} />
+            <div className="flex items-center gap-1.5 text-muted text-sm mt-0.5 flex-wrap">
+              <MapPin size={12} className="flex-shrink-0" />
               <span>{user.city}</span>
+              {user.height_cm && (
+                <>
+                  <span className="text-muted/40">·</span>
+                  <span>{formatHeight(user.height_cm)}</span>
+                </>
+              )}
             </div>
           </div>
 

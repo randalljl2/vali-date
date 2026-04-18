@@ -48,7 +48,6 @@ export function OnboardingPhotoGrid({ onChange }: Props) {
 
   async function handleDelete(idx: number) {
     setDeletingIdx(idx)
-    // Best-effort storage cleanup — non-blocking, non-critical
     deleteOnboardingPhoto(photos[idx].path)
     commit(photos.filter((_, i) => i !== idx))
     setDeletingIdx(null)
@@ -67,7 +66,7 @@ export function OnboardingPhotoGrid({ onChange }: Props) {
   return (
     <div className="space-y-3">
       {error && (
-        <p className="text-xs text-accent bg-accent/10 border border-accent/30 rounded-xl px-3 py-2.5 font-body">
+        <p className="text-xs text-accent bg-accent/10 border border-accent/20 rounded-xl px-3 py-2.5 font-body">
           {error}
         </p>
       )}
@@ -81,7 +80,7 @@ export function OnboardingPhotoGrid({ onChange }: Props) {
             <div
               key={photo.path}
               className={cn(
-                'relative aspect-square rounded-xl overflow-hidden bg-rim group',
+                'relative aspect-square rounded-xl overflow-hidden bg-border-soft group',
                 isDeleting && 'opacity-40'
               )}
             >
@@ -99,8 +98,7 @@ export function OnboardingPhotoGrid({ onChange }: Props) {
                 </div>
               )}
 
-              {/* Controls — visible on hover */}
-              <div className="absolute inset-0 bg-black/55 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-between p-1.5">
+              <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-between p-1.5">
                 <button
                   onClick={() => handleDelete(idx)}
                   disabled={isDeleting}
@@ -133,15 +131,14 @@ export function OnboardingPhotoGrid({ onChange }: Props) {
           )
         })}
 
-        {/* Add-photo slot */}
         {canAdd && (
           <button
             onClick={() => fileRef.current?.click()}
             disabled={uploading}
             className={cn(
-              'aspect-square rounded-xl border-2 border-dashed border-rim',
+              'aspect-square rounded-xl border-2 border-dashed border-border',
               'hover:border-accent/50 hover:bg-accent/5 transition-colors',
-              'flex flex-col items-center justify-center gap-1.5 text-muted hover:text-cream',
+              'flex flex-col items-center justify-center gap-1.5 text-muted hover:text-ink-2',
               uploading && 'opacity-50 cursor-wait'
             )}
           >

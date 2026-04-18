@@ -1,200 +1,142 @@
 import { createClient } from '@/lib/supabase/server'
 import { DiscoverClient } from './DiscoverClient'
-import type { UserProfile, UserPhoto, Streak, NearMatchWithRater, SubscriptionTier } from '@/types'
+import type { DiscoverProfile, UserProfile, UserPhoto } from '@/types'
+
+// Server-side compatibility computation
+async function computeCompatibility(
+  supabase: Awaited<ReturnType<typeof import('@/lib/supabase/server').createClient>>,
+  myAnswers: Array<{ question_set: number; question_number: number; answer: string; importance: number }>,
+  theirAnswers: Array<{ question_set: number; question_number: number; answer: string; importance: number }>
+): Promise<{ score: number | null; sharedCount: number }> {
+  const mapThem = new Map(theirAnswers.map(a => [`${a.question_set}-${a.question_number}`, a]))
+  let numerator = 0, denominator = 0, sharedCount = 0
+  for (const a of myAnswers) {
+    const b = mapThem.get(`${a.question_set}-${a.question_number}`)
+    if (!b) continue
+    sharedCount++
+    if (a.answer === b.answer) { numerator += a.importance + b.importance; denominator += a.importance + b.importance }
+    else denominator += Math.max(a.importance, b.importance)
+  }
+  if (sharedCount < 10) return { score: null, sharedCount }
+  return { score: Math.round((numerator / denominator) * 100), sharedCount }
+}
 
 export default async function DiscoverPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null
 
-  // Fetch rated IDs, current user's preferences, and subscription tier in parallel
-  const [{ data: ratedRows }, { data: currentUser }] = await Promise.all([
-    supabase.from('ratings').select('rated_id').eq('rater_id', user.id),
-    supabase.from('users').select('preferred_age_min, preferred_age_max, subscription_tier, gender, show_me').eq('id', user.id).single(),
+  const { data: currentUser } = await supabase
+    .from('users')
+    .select('preferred_age_min, preferred_age_max, gender, show_me')
+    .eq('id', user.id)
+    .single()
+
+  const ageMin  = currentUser?.preferred_age_min ?? 18
+  const ageMax  = currentUser?.preferred_age_max ?? 65
+  const myShowMe = currentUser?.show_me ?? 'everyone'
+  const myGender = currentUser?.gender ?? null
+
+  // Collect excluded IDs (passed, expressed interest, already matched)
+  const [
+    { data: passedRows },
+    { data: interestRows },
+    { data: matchRows },
+  ] = await Promise.all([
+    supabase.from('passes').select('passed_id').eq('user_id', user.id),
+    supabase.from('interests').select('recipient_id').eq('sender_id', user.id),
+    supabase.from('matches').select('user_a, user_b').or(`user_a.eq.${user.id},user_b.eq.${user.id}`),
   ])
 
-  const ratedIds = (ratedRows ?? []).map((r) => r.rated_id)
+  const excludeIds = new Set<string>([
+    user.id,
+    ...(passedRows ?? []).map((r: { passed_id: string }) => r.passed_id),
+    ...(interestRows ?? []).map((r: { recipient_id: string }) => r.recipient_id),
+    ...(matchRows ?? []).flatMap((m: { user_a: string; user_b: string }) => [m.user_a, m.user_b]),
+  ])
 
-  const ageMin = currentUser?.preferred_age_min ?? 18
-  const ageMax = currentUser?.preferred_age_max ?? 65
-  const myGender = currentUser?.gender ?? null
-  const myShowMe = currentUser?.show_me ?? 'everyone'
+  let q = supabase.from('users').select('*').gte('age', ageMin).limit(40)
+  if (ageMax < 65) q = q.lte('age', ageMax)
+  if (myShowMe === 'men')   q = q.eq('gender', 'man')
+  if (myShowMe === 'women') q = q.eq('gender', 'woman')
 
-  // Profiles not yet rated by this user, excluding self, filtered by age preference
-  let profilesQuery = supabase
-    .from('users')
-    .select('*')
-    .neq('id', user.id)
-    .gte('age', ageMin)
-    .order('created_at', { ascending: false })
-    .limit(20)
+  const { data: rawProfiles } = await q
 
-  // Only apply upper bound if not at the max (65+ means no upper limit)
-  if (ageMax < 65) {
-    profilesQuery = profilesQuery.lte('age', ageMax)
+  // Filter excludes in JS (Supabase .not().in() is finicky with Sets)
+  const profiles = ((rawProfiles ?? []) as UserProfile[]).filter(p => !excludeIds.has(p.id))
+  const profileIds = profiles.map(p => p.id)
+
+  if (profileIds.length === 0) {
+    return <DiscoverClient initialProfiles={[]} userId={user.id} />
   }
 
-  // My show_me preference — filter by their gender
-  if (myShowMe === 'men') {
-    profilesQuery = profilesQuery.eq('gender', 'man')
-  } else if (myShowMe === 'women') {
-    profilesQuery = profilesQuery.eq('gender', 'woman')
-  }
-  // 'everyone' → no gender filter
-
-  // Their show_me preference — only show profiles that want to see my gender
-  if (myGender === 'man') {
-    profilesQuery = profilesQuery.or('show_me.eq.men,show_me.eq.everyone,show_me.is.null')
-  } else if (myGender === 'woman') {
-    profilesQuery = profilesQuery.or('show_me.eq.women,show_me.eq.everyone,show_me.is.null')
-  } else {
-    // non-binary, prefer-not-to-say, or not set — only show profiles open to everyone
-    profilesQuery = profilesQuery.or('show_me.eq.everyone,show_me.is.null')
-  }
-
-  if (ratedIds.length > 0) {
-    profilesQuery = profilesQuery.not('id', 'in', `(${ratedIds.join(',')})`)
-  }
-
-  const { data: profiles } = await profilesQuery
-
-  const profileIds = (profiles ?? []).map((p: UserProfile) => p.id)
-
-  // Fetch photos, streaks, and today's confidence in parallel
   const today = new Date().toISOString().split('T')[0]
 
-  const [photosResult, streaksResult, confidenceResult] = await Promise.all(
-    profileIds.length
-      ? [
-          supabase
-            .from('user_photos')
-            .select('*')
-            .in('user_id', profileIds)
-            .order('position', { ascending: true }),
-          supabase.from('streaks').select('*').in('user_id', profileIds),
-          supabase
-            .from('daily_confidence')
-            .select('user_id, score')
-            .in('user_id', profileIds)
-            .eq('date', today),
-        ]
-      : [
-          Promise.resolve({ data: [] }),
-          Promise.resolve({ data: [] }),
-          Promise.resolve({ data: [] }),
-        ]
-  )
-
-  // Group photos by user_id
-  const photoMap: Record<string, UserPhoto[]> = {}
-  for (const photo of ((photosResult.data ?? []) as UserPhoto[])) {
-    if (!photoMap[photo.user_id]) photoMap[photo.user_id] = []
-    photoMap[photo.user_id].push(photo)
-  }
-
-  // Streak map
-  const streakMap = Object.fromEntries(
-    ((streaksResult.data ?? []) as Streak[]).map((s) => [s.user_id, s])
-  )
-
-  // Confidence map: user_id → score (1–10)
-  const confidenceMap: Record<string, number> = {}
-  for (const row of (confidenceResult.data ?? []) as { user_id: string; score: number }[]) {
-    confidenceMap[row.user_id] = row.score
-  }
-
-  const todayStart = new Date()
-  todayStart.setHours(0, 0, 0, 0)
-
-  // Ratings given today + ratings received today (momentum) — in parallel
-  const [{ count: ratingsToday }, { count: ratingsReceivedToday }] = await Promise.all([
-    supabase
-      .from('ratings')
-      .select('*', { count: 'exact', head: true })
-      .eq('rater_id', user.id)
-      .gte('created_at', todayStart.toISOString()),
-    supabase
-      .from('ratings')
-      .select('*', { count: 'exact', head: true })
-      .eq('rated_id', user.id)
-      .gte('created_at', todayStart.toISOString()),
+  // Batch-fetch all needed data in parallel
+  const [
+    { data: photosData },
+    { data: confidenceData },
+    { data: myAnswersData },
+    { data: theirAnswersData },
+    { data: attractionData },
+  ] = await Promise.all([
+    supabase.from('user_photos').select('*').in('user_id', profileIds).order('position', { ascending: true }),
+    supabase.from('daily_confidence').select('user_id, score').in('user_id', profileIds).eq('date', today),
+    supabase.from('user_answers').select('question_set, question_number, answer, importance').eq('user_id', user.id),
+    supabase.from('user_answers').select('user_id, question_set, question_number, answer, importance').in('user_id', profileIds),
+    supabase.from('attraction_ratings').select('rated_id, score').eq('rater_id', user.id).in('rated_id', profileIds),
   ])
 
-  // Near matches received (others rated me a 4)
-  const { data: rawNearMatches } = await supabase
-    .from('near_matches')
-    .select('*')
-    .eq('rated_id', user.id)
-    .order('created_at', { ascending: false })
-    .limit(5)
-
-  // Fetch rater profiles for near matches (only for Plus/Premium)
-  const subscriptionTier = (currentUser?.subscription_tier ?? 'free') as SubscriptionTier
-  let nearMatchesWithRaters: NearMatchWithRater[] = []
-
-  if (rawNearMatches && rawNearMatches.length > 0) {
-    if (subscriptionTier !== 'free') {
-      const raterIds = rawNearMatches.map((nm) => nm.rater_id)
-      const { data: raterProfiles } = await supabase
-        .from('users')
-        .select('id, name, photo_url, average_score')
-        .in('id', raterIds)
-
-      const raterMap = new Map((raterProfiles ?? []).map((p) => [p.id, p]))
-      nearMatchesWithRaters = rawNearMatches.map((nm) => ({
-        ...nm,
-        rater: raterMap.get(nm.rater_id) ?? { id: nm.rater_id, name: '?', photo_url: null, average_score: 0 },
-      })) as NearMatchWithRater[]
-    } else {
-      nearMatchesWithRaters = rawNearMatches.map((nm) => ({
-        ...nm,
-        rater: { id: nm.rater_id, name: '?', photo_url: null, average_score: 0 },
-      })) as NearMatchWithRater[]
-    }
+  // Build lookup maps
+  const photoMap: Record<string, UserPhoto[]> = {}
+  for (const p of (photosData ?? []) as UserPhoto[]) {
+    if (!photoMap[p.user_id]) photoMap[p.user_id] = []
+    photoMap[p.user_id].push(p)
   }
 
-  // For Plus/Premium: which near matches has B already sent a convince me for?
-  let sentConvinceMeNearMatchIds: string[] = []
-  if (subscriptionTier !== 'free' && nearMatchesWithRaters.length > 0) {
-    const nearMatchIds = nearMatchesWithRaters.map((nm) => nm.id)
-    const { data: sentMessages } = await supabase
-      .from('convince_me_messages')
-      .select('near_match_id')
-      .in('near_match_id', nearMatchIds)
-      .eq('sender_id', user.id) // B is the sender
-
-    sentConvinceMeNearMatchIds = (sentMessages ?? []).map((m) => m.near_match_id)
+  const confidenceMap: Record<string, number> = {}
+  for (const c of (confidenceData ?? []) as { user_id: string; score: number }[]) {
+    confidenceMap[c.user_id] = c.score
   }
 
-  // Hot Right Now — top-rated profiles by average_score, excluding self and already-rated
-  // (ratings RLS only exposes rows the current user is party to, so we rank via users table)
-  let hotQuery = supabase
-    .from('users')
-    .select('*')
-    .neq('id', user.id)
-    .gt('rating_count', 0)
-    .order('average_score', { ascending: false })
-    .limit(3)
-
-  if (ratedIds.length > 0) {
-    hotQuery = hotQuery.not('id', 'in', `(${ratedIds.join(',')})`)
+  type ARow = { user_id: string; question_set: number; question_number: number; answer: string; importance: number }
+  const theirAnswersByUser: Record<string, ARow[]> = {}
+  for (const a of (theirAnswersData ?? []) as ARow[]) {
+    if (!theirAnswersByUser[a.user_id]) theirAnswersByUser[a.user_id] = []
+    theirAnswersByUser[a.user_id].push(a)
   }
 
-  const { data: hotProfiles } = await hotQuery
+  const attractionByUser: Record<string, number> = {}
+  for (const a of (attractionData ?? []) as { rated_id: string; score: number }[]) {
+    attractionByUser[a.rated_id] = a.score
+  }
 
-  return (
-    <DiscoverClient
-      initialProfiles={(profiles ?? []) as UserProfile[]}
-      photoMap={photoMap}
-      hotProfiles={(hotProfiles ?? []) as UserProfile[]}
-      streakMap={streakMap}
-      confidenceMap={confidenceMap}
-      ratingsToday={ratingsToday ?? 0}
-      ratingsReceivedToday={ratingsReceivedToday ?? 0}
-      nearMatches={nearMatchesWithRaters}
-      subscriptionTier={subscriptionTier}
-      sentConvinceMeNearMatchIds={sentConvinceMeNearMatchIds}
-      userId={user.id}
-    />
+  const myAnswers = (myAnswersData ?? []) as ARow[]
+
+  // Compute compatibility for each candidate
+  const discoverProfiles: DiscoverProfile[] = await Promise.all(
+    profiles.map(async profile => {
+      const { score, sharedCount } = await computeCompatibility(
+        supabase, myAnswers, theirAnswersByUser[profile.id] ?? []
+      )
+      return {
+        ...profile,
+        photos: photoMap[profile.id] ?? [],
+        compatibilityScore: score,
+        sharedAnswers: sharedCount,
+        confidenceToday: confidenceMap[profile.id] ?? null,
+      }
+    })
   )
+
+  // Sort: 85% compat + 15% attraction. Default compat = 50 (neutral) when unknown.
+  const sorted = discoverProfiles.sort((a, b) => {
+    const attrA = (attractionByUser[a.id] ?? 5) * 10
+    const attrB = (attractionByUser[b.id] ?? 5) * 10
+    const scoreA = (a.compatibilityScore ?? 50) * 0.85 + attrA * 0.15
+    const scoreB = (b.compatibilityScore ?? 50) * 0.85 + attrB * 0.15
+    return scoreB - scoreA
+  })
+
+  return <DiscoverClient initialProfiles={sorted} userId={user.id} />
 }

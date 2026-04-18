@@ -15,10 +15,14 @@ const sizes = {
 export function Logo({ size = 'md', className }: LogoProps) {
   return (
     <span
-      className={cn('font-display inline-flex items-baseline select-none', sizes[size], className)}
+      className={cn(
+        'font-display inline-flex items-baseline select-none',
+        sizes[size],
+        className
+      )}
     >
-      <span className="text-cream font-bold tracking-tight">VALI</span>
-      <span className="text-accent font-black italic ml-1 tracking-tight">DATE</span>
+      <span className="text-ink font-extrabold tracking-tight">Vali</span>
+      <span className="text-accent font-extrabold italic tracking-tight">Date</span>
     </span>
   )
 }
