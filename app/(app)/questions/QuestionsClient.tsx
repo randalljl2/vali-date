@@ -10,7 +10,7 @@ interface Props {
   initialAnswers: UserAnswer[]
 }
 
-type AnswerMap = Record<string, { answer: string; importance: number }>
+type AnswerMap = Record<string, { answer: 'a' | 'b' | 'c'; importance: 1 | 2 | 3 }>
 
 const IMPORTANCE_LABELS: Record<number, string> = {
   1: 'Nice to know',
@@ -39,7 +39,7 @@ export function QuestionsClient({ initialAnswers }: Props) {
 
   const questions = getSetQuestions(activeSet)
 
-  function setAnswer(set: number, num: number, answer: string) {
+  function setAnswer(set: number, num: number, answer: 'a' | 'b' | 'c') {
     const key = answerKey(set, num)
     setAnswers(prev => ({
       ...prev,
@@ -48,12 +48,13 @@ export function QuestionsClient({ initialAnswers }: Props) {
     setSavedSet(null)
   }
 
-  function setImportance(set: number, num: number, importance: number) {
+  function setImportance(set: number, num: number, importance: 1 | 2 | 3) {
     const key = answerKey(set, num)
-    setAnswers(prev => ({
-      ...prev,
-      [key]: { answer: prev[key]?.answer ?? '', importance },
-    }))
+    setAnswers(prev => {
+      const existing = prev[key]
+      if (!existing?.answer) return prev
+      return { ...prev, [key]: { answer: existing.answer, importance } }
+    })
     setSavedSet(null)
   }
 
@@ -206,7 +207,7 @@ export function QuestionsClient({ initialAnswers }: Props) {
                 <div className="space-y-2">
                   <p className="text-xs text-muted font-body">How much does this matter to you?</p>
                   <div className="grid grid-cols-3 gap-1.5">
-                    {[1, 2, 3].map(imp => {
+                    {([1, 2, 3] as const).map(imp => {
                       const isSelected = current?.importance === imp
                       return (
                         <button
