@@ -50,6 +50,7 @@ export interface UserProfile {
   show_me: ShowMe | null
   preferred_age_min: number | null
   preferred_age_max: number | null
+  min_compatibility_threshold: number
   subscription_tier: SubscriptionTier
   prompt_1_question: string | null
   prompt_1_answer: string | null

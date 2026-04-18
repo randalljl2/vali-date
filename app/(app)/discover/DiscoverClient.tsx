@@ -14,18 +14,35 @@ interface Props {
   userId: string
 }
 
-function CompatibilityDisplay({ score }: { score: number | null }) {
+function CompatibilityDisplay({ score, sharedAnswers }: { score: number | null; sharedAnswers: number }) {
   if (score === null) return (
-    <div className="text-center">
-      <p className="font-display font-bold text-3xl text-muted leading-none">—</p>
-      <p className="text-[9px] uppercase tracking-widest text-muted font-body mt-0.5">Loading</p>
+    <div className="w-full border-b border-border-soft px-5 py-4 flex items-center justify-between">
+      <div>
+        <p className="font-display font-black text-muted leading-none" style={{ fontSize: '2.8rem' }}>—</p>
+        <p className="text-[10px] uppercase tracking-widest text-muted font-body mt-1">% compatible</p>
+      </div>
+      <p className="text-xs text-muted font-body text-right max-w-[140px] leading-relaxed">
+        {sharedAnswers > 0
+          ? `${sharedAnswers} shared answers — need 10+ to score`
+          : 'Answer questions to unlock compatibility'}
+      </p>
     </div>
   )
-  const color = score >= 80 ? '#2a7d5f' : score >= 60 ? '#5a6e3a' : score >= 40 ? '#8a6e2a' : '#7a2535'
   return (
-    <div className="text-center">
-      <p className="font-display font-black leading-none" style={{ fontSize: '2.5rem', color }}>{score}%</p>
-      <p className="text-[9px] uppercase tracking-widest font-body mt-0.5" style={{ color }}>Compatible</p>
+    <div className="w-full border-b border-border-soft px-5 py-4 flex items-center justify-between">
+      <div>
+        <p className="font-display font-black text-accent leading-none" style={{ fontSize: '2.8rem' }}>{score}%</p>
+        <p className="text-[10px] uppercase tracking-widest text-accent/70 font-body mt-1">compatible</p>
+      </div>
+      <div className="text-right">
+        <div className="h-2 w-28 rounded-full bg-border overflow-hidden">
+          <div
+            className="h-full rounded-full bg-accent transition-all"
+            style={{ width: `${score}%` }}
+          />
+        </div>
+        <p className="text-[10px] text-muted font-body mt-1.5">{sharedAnswers} shared q&apos;s</p>
+      </div>
     </div>
   )
 }
@@ -79,37 +96,30 @@ function ProfileCard({ profile }: { profile: DiscoverProfile }) {
         )}
       </div>
 
+      {/* Compatibility — full-width strip */}
+      <CompatibilityDisplay score={profile.compatibilityScore} sharedAnswers={profile.sharedAnswers} />
+
       {/* Body */}
       <div className="p-5 space-y-4">
-        {/* Name + compat */}
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex-1 min-w-0">
-            <h2 className="font-display font-bold text-2xl text-ink leading-tight">
-              {profile.name}, {profile.age}
-            </h2>
-            <p className="text-muted font-body text-sm mt-0.5">{profile.city}</p>
-            <div className="flex flex-wrap gap-1.5 mt-2">
-              {profile.height_cm && (
-                <span className="text-xs px-2.5 py-1 rounded-full border border-border-soft bg-bg text-muted font-body">
-                  {formatHeight(profile.height_cm)}
-                </span>
-              )}
+        {/* Name row */}
+        <div>
+          <h2 className="font-display font-bold text-2xl text-ink leading-tight">
+            {profile.name}, {profile.age}
+          </h2>
+          <p className="text-muted font-body text-sm mt-0.5">{profile.city}</p>
+          <div className="flex flex-wrap gap-1.5 mt-2">
+            {profile.height_cm && (
               <span className="text-xs px-2.5 py-1 rounded-full border border-border-soft bg-bg text-muted font-body">
-                {HERE_FOR_LABELS[profile.here_for]}
+                {formatHeight(profile.height_cm)}
               </span>
-              {profile.confidenceToday !== null && (
-                <span className="text-xs px-2.5 py-1 rounded-full border border-border-soft bg-bg text-muted font-body">
-                  Confidence {profile.confidenceToday}/10
-                </span>
-              )}
-            </div>
-          </div>
-          <div className="flex-shrink-0">
-            <CompatibilityDisplay score={profile.compatibilityScore} />
-            {profile.sharedAnswers > 0 && (
-              <p className="text-[9px] text-muted font-body text-center mt-1">
-                {profile.sharedAnswers} shared q&apos;s
-              </p>
+            )}
+            <span className="text-xs px-2.5 py-1 rounded-full border border-border-soft bg-bg text-muted font-body">
+              {HERE_FOR_LABELS[profile.here_for]}
+            </span>
+            {profile.confidenceToday !== null && (
+              <span className="text-xs px-2.5 py-1 rounded-full border border-border-soft bg-bg text-muted font-body">
+                Confidence {profile.confidenceToday}/10
+              </span>
             )}
           </div>
         </div>

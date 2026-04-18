@@ -28,14 +28,15 @@ export default async function DiscoverPage() {
 
   const { data: currentUser } = await supabase
     .from('users')
-    .select('preferred_age_min, preferred_age_max, gender, show_me')
+    .select('preferred_age_min, preferred_age_max, gender, show_me, min_compatibility_threshold')
     .eq('id', user.id)
     .single()
 
-  const ageMin  = currentUser?.preferred_age_min ?? 18
-  const ageMax  = currentUser?.preferred_age_max ?? 65
-  const myShowMe = currentUser?.show_me ?? 'everyone'
-  const myGender = currentUser?.gender ?? null
+  const ageMin      = currentUser?.preferred_age_min ?? 18
+  const ageMax      = currentUser?.preferred_age_max ?? 65
+  const myShowMe    = currentUser?.show_me ?? 'everyone'
+  const myGender    = currentUser?.gender ?? null
+  const minCompat   = currentUser?.min_compatibility_threshold ?? 0
 
   // Collect excluded IDs (passed, expressed interest, already matched)
   const [
@@ -138,5 +139,10 @@ export default async function DiscoverPage() {
     return scoreB - scoreA
   })
 
-  return <DiscoverClient initialProfiles={sorted} userId={user.id} />
+  // Apply minimum compatibility threshold filter
+  const filtered = minCompat > 0
+    ? sorted.filter(p => p.compatibilityScore !== null && p.compatibilityScore >= minCompat)
+    : sorted
+
+  return <DiscoverClient initialProfiles={filtered} userId={user.id} />
 }

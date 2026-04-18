@@ -287,6 +287,24 @@ export async function updateAgePreference(
   return { success: true }
 }
 
+export async function updateCompatibilityThreshold(
+  threshold: number
+): Promise<{ success: boolean } | { error: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const { error } = await supabase.from('users').update({
+    min_compatibility_threshold: threshold,
+    updated_at: new Date().toISOString(),
+  }).eq('id', user.id)
+
+  if (error) return { error: error.message }
+  revalidatePath('/profile')
+  revalidatePath('/discover')
+  return { success: true }
+}
+
 export async function updateHeight(
   heightCm: number | null
 ): Promise<{ success: boolean } | { error: string }> {
@@ -507,8 +525,27 @@ export async function saveAnswers(
 
   if (cacheErr) console.error('Failed to invalidate compatibility cache:', cacheErr.message)
 
+  // Re-cache scores for all existing matches so /matches and chat headers stay current
+  const { data: userMatches } = await supabase
+    .from('matches')
+    .select('user_a, user_b')
+    .or(`user_a.eq.${user.id},user_b.eq.${user.id}`)
+
+  if (userMatches && userMatches.length > 0) {
+    await Promise.all(
+      userMatches.map(async (m: { user_a: string; user_b: string }) => {
+        const otherId = m.user_a === user.id ? m.user_b : m.user_a
+        const { score, sharedCount } = await computeCompatibility(supabase, user.id, otherId)
+        if (score !== null) {
+          await cacheCompatibility(supabase, user.id, otherId, score, sharedCount)
+        }
+      })
+    )
+  }
+
   revalidatePath('/questions')
   revalidatePath('/discover')
+  revalidatePath('/matches')
   return { success: true }
 }
 

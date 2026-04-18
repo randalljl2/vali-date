@@ -8,6 +8,7 @@ import { HeightPicker } from '@/components/HeightPicker'
 import {
   signOut, updateDailyConfidence, updateUserPrompts,
   updateAgePreference, updateGenderPreference, updateHeight,
+  updateCompatibilityThreshold,
 } from '@/lib/actions'
 import { formatHeight } from '@/lib/utils'
 import { HERE_FOR_LABELS, PROMPTS, GENDER_LABELS, SHOW_ME_LABELS } from '@/types'
@@ -67,6 +68,11 @@ export function ProfileClient({
   const [heightSaved, setHeightSaved] = useState(false)
   const [heightError, setHeightError] = useState<string | null>(null)
 
+  // Compatibility threshold
+  const [threshold, setThreshold] = useState(profile.min_compatibility_threshold ?? 0)
+  const [savingThreshold, setSavingThreshold] = useState(false)
+  const [thresholdSaved, setThresholdSaved] = useState(false)
+
   // Gender & showMe
   const [editGender, setEditGender] = useState<Gender | ''>(profile.gender ?? '')
   const [editShowMe, setEditShowMe] = useState<ShowMe>(profile.show_me ?? 'everyone')
@@ -95,6 +101,15 @@ export function ProfileClient({
     if ('error' in result) { setGenderError(result.error); return }
     setGenderSaved(true)
     setTimeout(() => setGenderSaved(false), 2500)
+  }
+
+  async function handleThresholdSave(value: number) {
+    setThreshold(value)
+    setSavingThreshold(true)
+    await updateCompatibilityThreshold(value)
+    setSavingThreshold(false)
+    setThresholdSaved(true)
+    setTimeout(() => setThresholdSaved(false), 2500)
   }
 
   async function handleAgeSave() {
@@ -479,6 +494,50 @@ export function ProfileClient({
           >
             {savingAge ? 'Saving…' : ageSaved ? '✓ Preferences saved' : 'Save preferences'}
           </button>
+        </div>
+      </div>
+
+      {/* Compatibility threshold */}
+      <div className="mx-4 mt-4 bg-surface border border-border rounded-2xl p-4">
+        <h3 className="font-body font-semibold text-ink text-sm mb-1">Minimum compatibility</h3>
+        <p className="text-xs text-muted font-body mb-4">
+          Only show profiles that meet this threshold. Profiles with fewer than 10 shared answers
+          are always hidden when a minimum is set.
+        </p>
+        <div className="grid grid-cols-1 gap-2">
+          {([
+            { value: 0,  label: 'No minimum',  sub: 'Show everyone' },
+            { value: 50, label: '50%+',         sub: 'Some alignment' },
+            { value: 60, label: '60%+',         sub: 'Good match' },
+            { value: 70, label: '70%+',         sub: 'Strong match' },
+            { value: 80, label: '80%+',         sub: 'Exceptional match' },
+          ] as const).map(({ value, label, sub }) => {
+            const isSelected = threshold === value
+            return (
+              <button
+                key={value}
+                onClick={() => !savingThreshold && handleThresholdSave(value)}
+                disabled={savingThreshold}
+                className={`flex items-center justify-between px-4 py-3 rounded-xl border font-body text-sm transition-all ${
+                  isSelected
+                    ? 'border-accent bg-accent/8 text-ink'
+                    : 'border-border bg-bg text-muted hover:border-accent/30 hover:text-ink'
+                }`}
+              >
+                <span className="font-medium">{label}</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted">{sub}</span>
+                  {isSelected && (
+                    savingThreshold
+                      ? <span className="text-[10px] text-muted font-body">Saving…</span>
+                      : thresholdSaved
+                      ? <Check size={13} className="text-[#2a7d5f]" />
+                      : <Check size={13} className="text-accent" />
+                  )}
+                </div>
+              </button>
+            )
+          })}
         </div>
       </div>
 
