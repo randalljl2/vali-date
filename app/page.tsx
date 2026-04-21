@@ -50,8 +50,7 @@ export default async function LandingPage() {
           </h1>
 
           <p className="font-serif italic text-ink-2 text-lg sm:text-xl max-w-lg mb-4 leading-relaxed">
-            The app that matches you on who you actually are —<br className="hidden sm:block" />
-            not on who the algorithm decides you are.
+            Built on self-knowledge. Not swipes.
           </p>
 
           <div className="mt-10 w-full max-w-md">
@@ -65,12 +64,21 @@ export default async function LandingPage() {
           </div>
         </section>
 
-        {/* ── 2. The Confession ─────────────────────────────── */}
+        {/* ── 2. Emotional hook ─────────────────────────────── */}
+        <section className="px-6 py-16 max-w-2xl mx-auto text-center">
+          <p className="font-serif italic text-ink-2 text-lg sm:text-xl leading-relaxed">
+            Endless swiping. Conversations that go nowhere. Matches who want something
+            completely different from you. Dating apps were supposed to make this easier.
+            Somehow they made it worse.
+          </p>
+        </section>
+
+        {/* ── 3. The Confession ─────────────────────────────── */}
         <section className="px-6 py-20 max-w-3xl mx-auto">
           <div
             className="rounded-3xl p-8 sm:p-12 text-center space-y-6"
             style={{
-              background: 'linear-gradient(135deg, #1c1814 0%, #2d1f1a 100%)',
+              background: 'linear-gradient(135deg, #2a1f18 0%, #332519 100%)',
               border: '1px solid rgba(122,37,53,0.3)',
             }}
           >
@@ -109,8 +117,7 @@ export default async function LandingPage() {
               className="text-sm leading-relaxed max-w-xl mx-auto font-body"
               style={{ color: 'rgba(245,240,232,0.65)' }}
             >
-              They use these numbers to control your dating life while hiding them from you.
-              ValiDate ignores them entirely — and matches you on what actually predicts connection.
+              No hidden desirability scores. Just transparent compatibility built on who you actually are.
             </p>
           </div>
         </section>
@@ -142,15 +149,19 @@ export default async function LandingPage() {
         <section className="px-6 py-20 max-w-4xl mx-auto">
           <div className="text-center mb-14">
             <p className="text-xs uppercase tracking-widest text-muted font-body mb-3">Simple by design</p>
-            <h2 className="font-display font-bold text-ink" style={{ fontSize: 'clamp(1.8rem, 5vw, 3rem)' }}>
+            <h2 className="font-display font-bold text-ink mb-5" style={{ fontSize: 'clamp(1.8rem, 5vw, 3rem)' }}>
               How it works
             </h2>
+            <p className="font-serif italic text-muted text-base leading-relaxed max-w-xl mx-auto">
+              We compare your answers across values, lifestyle, communication style, and long-term
+              goals to calculate a real compatibility score.
+            </p>
           </div>
 
           <div className="grid sm:grid-cols-4 gap-5">
             {[
               { n: '01', title: 'Answer honestly',  desc: 'Work through 25 thoughtful questions. Your answers stay private — they only power the algorithm.' },
-              { n: '02', title: 'Get matched',       desc: 'See your compatibility percentage with everyone in the feed. Matches require mutual interest and 60%+ compatibility.' },
+              { n: '02', title: 'Get matched',       desc: 'See your compatibility percentage with everyone in the feed. Matches require mutual interest and 60%+ compatibility. Below 60%, long-term alignment drops significantly. We\'d rather show you fewer, better matches.' },
               { n: '03', title: 'Connect',           desc: 'Express interest. When it\'s mutual and you\'re compatible, a match is created.' },
               { n: '04', title: 'Go deeper',         desc: 'Answer more question sets to improve your compatibility score and surface better matches.' },
             ].map(({ n, title, desc }) => (
