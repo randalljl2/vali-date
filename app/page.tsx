@@ -202,34 +202,10 @@ export default async function LandingPage() {
         </section>
 
         {/* ── 6. Social proof ───────────────────────────────── */}
-        <section className="px-6 py-24 max-w-3xl mx-auto text-center space-y-16">
-          <div>
-            <p
-              className="font-display font-black leading-none text-accent"
-              style={{ fontSize: 'clamp(3rem, 12vw, 7rem)' }}
-            >
-              94%
-            </p>
-            <p className="text-muted font-body text-lg mt-2">
-              of users say their first conversation felt more genuine than anything on Hinge.
-            </p>
-          </div>
-
-          <div className="bg-surface border border-border rounded-3xl p-8 text-left space-y-5 max-w-lg mx-auto shadow-sm">
-            <p className="font-serif italic text-ink text-lg leading-relaxed">
-              &ldquo;I matched with someone and we were already talking about the things that actually
-              matter before our first date. I&apos;ve never experienced that.&rdquo;
-            </p>
-            <div className="flex items-center gap-3 pt-3 border-t border-border">
-              <div className="w-10 h-10 rounded-full bg-accent/10 border border-accent/20 flex items-center justify-center flex-shrink-0">
-                <span className="font-display font-bold text-accent text-sm">M</span>
-              </div>
-              <div>
-                <p className="text-ink font-body font-medium text-sm">@maya_in_chicago</p>
-                <p className="text-muted font-body text-xs">Member since February 2026</p>
-              </div>
-            </div>
-          </div>
+        <section className="px-6 py-24 max-w-3xl mx-auto text-center">
+          <p className="font-serif italic text-muted text-xl leading-relaxed">
+            Built for people who are tired of swiping into the void.
+          </p>
         </section>
 
         {/* ── 7. Final CTA ──────────────────────────────────── */}
